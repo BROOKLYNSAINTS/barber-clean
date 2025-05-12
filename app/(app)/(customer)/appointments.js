@@ -1,0 +1,319 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { getCustomerAppointments, auth } from '@/services/firebase'; // Adjusted path
+import { useRouter, useFocusEffect } from 'expo-router';
+
+const AppointmentHistoryScreen = () => {
+  const router = useRouter();
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchAppointments = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      const user = auth.currentUser;
+      if (user) {
+        // Assuming getCustomerAppointments fetches appointments for the logged-in customer
+        const appointmentsData = await getCustomerAppointments(user.uid);
+        
+        appointmentsData.sort((a, b) => {
+          const dateA = new Date(`${a.date}T${a.time}`);
+          const dateB = new Date(`${b.date}T${b.time}`);
+          return dateB - dateA;
+        });
+        
+        setAppointments(appointmentsData);
+      } else {
+        setError('User not authenticated');
+        // Optionally redirect to login if user is not found
+        // router.replace('/(auth)/login');
+      }
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+      setError('Failed to load appointments');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchAppointments();
+    }, [fetchAppointments])
+  );
+
+  const formatDate = (dateString) => {
+    const options = { weekday: 'short', month: 'short', day: 'numeric' };
+    return new Date(dateString).toLocaleDateString(undefined, options);
+  };
+
+  const isUpcoming = (appointment) => {
+    const appointmentDate = new Date(`${appointment.date}T${appointment.time}`);
+    return appointmentDate > new Date();
+  };
+
+  const renderAppointmentItem = ({ item }) => {
+    const upcoming = isUpcoming(item);
+    
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.appointmentCard,
+          upcoming ? styles.upcomingCard : styles.pastCard
+        ]}
+        onPress={() => router.push({ 
+          pathname: '/(app)/(customer)/appointment-details', 
+          params: { appointment: JSON.stringify(item) } 
+        })}
+      >
+        <View style={styles.appointmentHeader}>
+          <View style={styles.dateTimeContainer}>
+            <Text style={styles.dateText}>{formatDate(item.date)}</Text>
+            <Text style={styles.timeText}>{item.time}</Text>
+          </View>
+          
+          <View style={styles.statusContainer}>
+            <View style={[
+              styles.statusIndicator,
+              upcoming ? styles.upcomingIndicator : styles.pastIndicator
+            ]} />
+            <Text style={styles.statusText}>
+              {upcoming ? 'Upcoming' : 'Past'}
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.appointmentDetails}>
+          <View style={styles.detailRow}>
+            <Ionicons name="person-outline" size={16} color="#666" style={styles.detailIcon} />
+            <Text style={styles.detailText}>{item.barberName}</Text>
+          </View>
+          
+          <View style={styles.detailRow}>
+            <Ionicons name="cut-outline" size={16} color="#666" style={styles.detailIcon} />
+            <Text style={styles.detailText}>{item.serviceName}</Text>
+          </View>
+          
+          <View style={styles.detailRow}>
+            <Ionicons name="cash-outline" size={16} color="#666" style={styles.detailIcon} />
+            <Text style={styles.detailText}>${item.servicePrice.toFixed(2)}</Text>
+          </View>
+        </View>
+        
+        <View style={styles.appointmentFooter}>
+          <Ionicons name="chevron-forward" size={20} color="#2196F3" />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#2196F3" />
+        <Text style={styles.loadingText}>Loading appointments...</Text>
+      </View>
+    );
+  }
+
+  if (error && !loading) { // Show error only if not loading
+    return (
+      <View style={styles.centered}>
+        <Ionicons name="alert-circle-outline" size={64} color="#f44336" />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity 
+          style={styles.retryButton}
+          onPress={fetchAppointments}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (appointments.length === 0 && !loading) { // Show no appointments only if not loading and no error
+    return (
+      <View style={styles.centered}>
+        <Ionicons name="calendar-outline" size={64} color="#ccc" />
+        <Text style={styles.noAppointmentsText}>No appointments found</Text>
+        <TouchableOpacity 
+          style={styles.bookButton}
+          // BarberSelectionScreen is now (app)/(customer)/index.js
+          onPress={() => router.push('/(app)/(customer)/')}
+        >
+          <Text style={styles.bookButtonText}>Book an Appointment</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <FlatList
+        data={appointments}
+        renderItem={renderAppointmentItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContainer}
+      />
+      
+      <TouchableOpacity 
+        style={styles.floatingButton}
+        onPress={() => router.push('/(app)/(customer)/')}
+      >
+        <Ionicons name="add" size={24} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#f44336',
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 4,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  noAppointmentsText: {
+    marginTop: 10,
+    fontSize: 18,
+    color: '#666',
+    marginBottom: 20,
+  },
+  bookButton: {
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  bookButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  listContainer: {
+    padding: 16,
+  },
+  appointmentCard: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginBottom: 16,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  upcomingCard: {
+    borderColor: '#2196F3',
+  },
+  pastCard: {
+    borderColor: '#ddd',
+  },
+  appointmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#f5f5f5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  dateTimeContainer: {
+    flexDirection: 'column',
+  },
+  dateText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  timeText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  statusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusIndicator: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 6,
+  },
+  upcomingIndicator: {
+    backgroundColor: '#4CAF50',
+  },
+  pastIndicator: {
+    backgroundColor: '#9e9e9e',
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#666',
+  },
+  appointmentDetails: {
+    padding: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  detailIcon: {
+    marginRight: 8,
+  },
+  detailText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  appointmentFooter: {
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+    padding: 12,
+    alignItems: 'flex-end',
+  },
+  floatingButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#2196F3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+});
+
+export default AppointmentHistoryScreen;
+
