@@ -15,11 +15,12 @@ export default {
       bundleIdentifier: "com.ScheduleSync.barber",
       supportsTablet: true,
       useFrameworks: 'static',
+      buildNumber: '2',
       infoPlist: {
-        NSCalendarsUsageDescription: "This app needs access to your calendar.",
-        NSRemindersUsageDescription: "This app needs access to your reminders.",
         NSAppTransportSecurity: {
-          NSAllowsArbitraryLoads: true
+          NSExceptionMinimumTLSVersion: 'TLSv1.0',
+          NSAllowsArbitraryLoads: true,
+          NSAllowsLocalNetworking: true
         }
       }
     },
@@ -30,12 +31,16 @@ export default {
         backgroundColor: '#FFFFFF',
       },
     },
-    web: {
-      favicon: './assets/favicon.png',
-    },
     plugins: [
       'expo-notifications',
-      'expo-build-properties'
+      [
+        'expo-build-properties',
+        {
+          ios: {
+            useFrameworks: 'static'
+          }
+        }
+      ]
     ],
     extra: {
       eas: {
