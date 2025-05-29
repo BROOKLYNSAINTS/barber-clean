@@ -1,0 +1,26 @@
+diff --git a/node_modules/firebase/auth/react-native/index.js b/node_modules/firebase/auth/react-native/index.js
+new file mode 100644
+index 0000000..323dc3c
+--- /dev/null
++++ b/node_modules/firebase/auth/react-native/index.js
+@@ -0,0 +1,12 @@
++'use strict';
++
++Object.defineProperty(exports, '__esModule', { value: true });
++
++var reactNativePersistence = require('./persistence/react-native');
++
++Object.defineProperty(exports, 'getReactNativePersistence', {
++  enumerable: true,
++  get: function () {
++    return reactNativePersistence.getReactNativePersistence;
++  }
++});
+diff --git a/node_modules/firebase/auth/react-native/persistence/react-native.js b/node_modules/firebase/auth/react-native/persistence/react-native.js
+new file mode 100644
+index 0000000..f59f03c
+--- /dev/null
++++ b/node_modules/firebase/auth/react-native/persistence/react-native.js
+@@ -0,0 +1 @@
++export function getReactNativePersistence(storage) { return { type: 'ReactNativePersistence', storage }; }
+\ No newline at end of file
