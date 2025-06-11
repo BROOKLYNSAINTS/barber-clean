@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { assistWithAppointmentBooking } from '@/services/openai'; // Adjusted path
-import { getBarberAvailability, auth } from '@/services/firebase'; // Adjusted path
+//import { getBarberAvailability, auth } from '@/services/firebase'; // Adjusted path
+import { getBarberAvailability } from '@/services/firebase'; // Adjusted path
+
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
 const AIBookingAssistantScreen = () => {
@@ -561,6 +563,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#cccccc',
   },
 });
-
 export default AIBookingAssistantScreen;
 

@@ -3,7 +3,7 @@ import { initStripe, useStripe } from '@stripe/stripe-react-native';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
 import Constants from 'expo-constants';
-import { db, auth } from './firebase';
+import { db } from '@/services/firebase';
 import { doc, setDoc, getDoc, updateDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 // Initialize Stripe with publishable key
 // In a production app, this should be stored securely

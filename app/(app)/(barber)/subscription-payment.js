@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getUserProfile, updateUserProfile, auth } from "@/services/firebase"; // Adjusted path
+//import { getUserProfile, updateUserProfile, auth } from "@/services/firebase"; // Adjusted path
+import { getUserProfile, updateUserProfile} from "@/services/firebase"; // Adjusted path
 import { StripeProvider, CardField, useStripe } from "@stripe/stripe-react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import theme from "@/styles/theme"; // Adjusted path

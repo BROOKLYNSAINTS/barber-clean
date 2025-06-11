@@ -1,44 +1,40 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Calendar from 'expo-calendar';
+//import * as Calendar from 'expo-calendar';
 import * as Notifications from 'expo-notifications';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import DebugUser from '@/components/DebugUser';
 
-// Assuming services are correctly pathed from the project root
-// If services are in /services, and this file is in app/(app)/(customer)/
-// The path should be ../../../../services/
-// However, the original zip had services at the same level as app, components etc.
-// Let's assume the services folder is at the root of the `barber-clean` directory.
-// So from `barber-clean/app/(app)/(customer)/` to `barber-clean/services/` is `../../../../services/`
-// The previous files used `../../../services/` if they were one level up from `app` (e.g. in `src/screens`).
-// Given the current structure is `barber-clean/app/(app)/(customer)/` and `barber-clean/services/`
-// The path is indeed `../../../../services/`.
-// The provided file has `../services/` which is incorrect for the new structure.
-// Let's correct this if firebase/notifications are used. They are not directly used here, but good to note.
+// ✅ Safe JSON parsing
+const safeParse = (input) => {
+  if (!input) return null;
+  try {
+    return typeof input === 'string' ? JSON.parse(input) : input;
+  } catch (err) {
+    return null;
+  }
+};
 
-const AppointmentConfirmationScreen = () => {
+export default function AppointmentConfirmationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  // Safely parse parameters
-  const appointment = params.appointment ? JSON.parse(params.appointment) : null;
-  const barber = params.barber ? JSON.parse(params.barber) : null;
-  const service = params.service ? JSON.parse(params.service) : null;
-  
+  const appointment = safeParse(params.appointment);
+  const barber = safeParse(params.barber);
+  const service = safeParse(params.service);
+
   const [loading, setLoading] = useState(false);
   const [calendarAdded, setCalendarAdded] = useState(false);
   const [reminderSet, setReminderSet] = useState(false);
-  // const [error, setError] = useState(''); // Error state not used in original, can be added if needed
-
-  useEffect(() => {
-    if (!appointment || !barber || !service) {
-      // Handle missing parameters, perhaps show an error or redirect
-      Alert.alert("Error", "Appointment details are missing. Cannot display confirmation.", [
-        { text: "OK", onPress: () => router.replace('/(app)/(customer)/appointments') } // Or to home
-      ]);
-    }
-  }, [appointment, barber, service, router]);
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -56,29 +52,29 @@ const AppointmentConfirmationScreen = () => {
         setLoading(false);
         return;
       }
-      
+
       const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      const defaultCalendar = calendars.find(cal => cal.allowsModifications) || calendars[0]; // Fallback to first calendar
-      
+      const defaultCalendar = calendars.find((cal) => cal.allowsModifications) || calendars[0];
+
       if (!defaultCalendar) {
         Alert.alert('Error', 'No writable calendar found.');
         setLoading(false);
         return;
       }
-      
+
       const startDate = new Date(`${appointment.date}T${appointment.time}`);
-      const endDate = new Date(startDate.getTime() + service.duration * 60000);
-      
+      const endDate = new Date(startDate.getTime() + (service.duration || 30) * 60000);
+
       const eventDetails = {
         title: `Haircut: ${service.name} with ${barber.name}`,
         startDate,
         endDate,
-        notes: `Appointment for ${service.name}. Price: $${service.price.toFixed(2)}`,
+        notes: `Appointment for ${service.name}. Price: $${(service.price || 0).toFixed(2)}`,
         location: barber.address,
-        timeZone: Calendar.DEFAULT_CALENDAR_TIME_ZONE, // Use device's default timezone
-        alarms: [{ relativeOffset: -60 }], 
+        timeZone: Calendar.DEFAULT_CALENDAR_TIME_ZONE,
+        alarms: [{ relativeOffset: -60 }],
       };
-      
+
       await Calendar.createEventAsync(defaultCalendar.id, eventDetails);
       setCalendarAdded(true);
       Alert.alert('Success', 'Appointment added to your calendar.');
@@ -90,54 +86,69 @@ const AppointmentConfirmationScreen = () => {
     }
   };
 
-  const scheduleReminder = async () => {
-    if (!appointment || !barber || !service) return;
-    try {
-      setLoading(true);
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Notification permission is required for reminders.');
-        setLoading(false);
-        return;
-      }
-      
-      const content = {
-        title: 'Upcoming Haircut Appointment',
-        body: `Reminder: Your appointment for ${service.name} with ${barber.name} is tomorrow at ${appointment.time}.`,
-        data: { appointmentId: appointment.id, screen: '/(app)/(customer)/appointment-details', params: { appointment: JSON.stringify(appointment) } },
-      };
-      
-      const appointmentDate = new Date(`${appointment.date}T${appointment.time}`);
-      const triggerDate = new Date(appointmentDate);
-      triggerDate.setDate(triggerDate.getDate() - 1); // One day before
-      triggerDate.setHours(9, 0, 0); // At 9 AM
+const scheduleReminder = async () => {
+  if (!appointment || !barber || !service) return;
+  try {
+    console.log('🟡 Scheduling reminder...');
+    console.log('📅 Appointment:', appointment);
+    console.log('👤 Barber:', barber);
+    console.log('✂️ Service:', service);
 
-      if (triggerDate < new Date()) {
-        Alert.alert("Info", "Cannot set reminder as the appointment is too soon or in the past.");
-        setLoading(false);
-        return;
-      }
-      
-      await Notifications.scheduleNotificationAsync({
-        content,
-        trigger: triggerDate,
-      });
-      setReminderSet(true);
-      Alert.alert('Success', 'Appointment reminder has been set.');
-    } catch (error) {
-      console.error('Error scheduling reminder:', error);
-      Alert.alert('Error', 'Failed to set appointment reminder.');
-    } finally {
+    setLoading(true);
+    const { status } = await Notifications.requestPermissionsAsync();
+    console.log('🔐 Notification permission status:', status);
+
+    if (status !== 'granted') {
+      Alert.alert('Permission Denied', 'Notification permission is required.');
       setLoading(false);
+      return;
     }
-  };
 
+    const appointmentDate = new Date(`${appointment.date}T${appointment.time}`);
+    const triggerDate = new Date(appointmentDate);
+    triggerDate.setDate(triggerDate.getDate() - 1);
+    triggerDate.setHours(9, 0, 0);
+
+    const secondsUntilTrigger = Math.floor((triggerDate.getTime() - Date.now()) / 1000);
+
+    if (secondsUntilTrigger <= 0) {
+      Alert.alert('Info', 'Appointment is too soon to schedule a reminder.');
+      setLoading(false);
+      return;
+    }
+
+    const content = {
+      title: 'Upcoming Haircut Appointment',
+      body: `Reminder: ${service.name} with ${barber.name} is tomorrow at ${appointment.time}`,
+      data: { appointmentId: appointment.id },
+    };
+
+    await Notifications.scheduleNotificationAsync({
+      content,
+      trigger: { seconds: secondsUntilTrigger, repeats: false },
+    });
+
+    console.log('✅ Reminder scheduled successfully');
+    setReminderSet(true);
+    Alert.alert('Success', 'Reminder scheduled for 9 AM the day before.');
+  } catch (error) {
+    console.error('❌ Error scheduling reminder:', error);
+    Alert.alert('Error', 'Failed to set reminder.');
+  } finally {
+    setLoading(false);
+  }
+};
   const handleDone = () => {
-    // Replace to avoid going back to confirmation. Navigate to the main appointments list.
-    router.replace('/(app)/(customer)/appointments');
+router.replace({
+  pathname: '/(app)/(customer)/appointment-details',
+  params: {
+    appointment: JSON.stringify(appointment),
+    barber: JSON.stringify(barber),
+    service: JSON.stringify(service),
+  },
+});
   };
 
-  // Render a loading/error state if essential params are missing
   if (!appointment || !barber || !service) {
     return (
       <View style={styles.centeredLoading}>
@@ -149,6 +160,7 @@ const AppointmentConfirmationScreen = () => {
 
   return (
     <ScrollView style={styles.container}>
+      <DebugUser screenName="Appointment Confirmation" />
       <View style={styles.confirmationCard}>
         <Ionicons name="checkmark-circle" size={64} color="#4CAF50" style={styles.confirmationIcon} />
         <Text style={styles.confirmationTitle}>Appointment Confirmed!</Text>
@@ -157,47 +169,54 @@ const AppointmentConfirmationScreen = () => {
 
       <View style={styles.detailsCard}>
         <Text style={styles.detailsTitle}>Appointment Details</Text>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Barber:</Text>
           <Text style={styles.detailValue}>{barber.name}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Service:</Text>
           <Text style={styles.detailValue}>{service.name}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Date:</Text>
           <Text style={styles.detailValue}>{formatDate(appointment.date)}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Time:</Text>
           <Text style={styles.detailValue}>{appointment.time}</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Duration:</Text>
-          <Text style={styles.detailValue}>{service.duration} minutes</Text>
+          <Text style={styles.detailValue}>{service.duration || 30} minutes</Text>
         </View>
-        
+
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Price:</Text>
-          <Text style={styles.detailValue}>${service.price.toFixed(2)}</Text>
+          <Text style={styles.detailValue}>${(service.price || 0).toFixed(2)}</Text>
         </View>
-        
+
+        {barber.phone && (
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Phone:</Text>
+            <Text style={styles.detailValue}>{barber.phone}</Text>
+          </View>
+        )}
+
         {barber.address && (
-            <View style={styles.detailRow}>
+          <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Location:</Text>
             <Text style={styles.detailValue}>{barber.address}</Text>
-            </View>
+          </View>
         )}
       </View>
 
       <View style={styles.actionsContainer}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.actionButton, calendarAdded && styles.disabledButtonGreen]}
           onPress={addToCalendar}
           disabled={loading || calendarAdded}
@@ -213,8 +232,8 @@ const AppointmentConfirmationScreen = () => {
             </>
           )}
         </TouchableOpacity>
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           style={[styles.actionButton, reminderSet && styles.disabledButtonGreen]}
           onPress={scheduleReminder}
           disabled={loading || reminderSet}
@@ -232,10 +251,7 @@ const AppointmentConfirmationScreen = () => {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity 
-        style={styles.doneButton}
-        onPress={handleDone}
-      >
+      <TouchableOpacity style={styles.doneButton} onPress={handleDone}>
         <Text style={styles.doneButtonText}>Done</Text>
       </TouchableOpacity>
 
@@ -244,18 +260,11 @@ const AppointmentConfirmationScreen = () => {
       </Text>
     </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  centeredLoading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#fff' },
+  centeredLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   confirmationCard: {
     alignItems: 'center',
     padding: 24,
@@ -263,20 +272,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',
   },
-  confirmationIcon: {
-    marginBottom: 16,
-  },
+  confirmationIcon: { marginBottom: 16 },
   confirmationTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 8,
     textAlign: 'center',
   },
-  confirmationSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
+  confirmationSubtitle: { fontSize: 16, color: '#666', textAlign: 'center' },
   detailsCard: {
     margin: 16,
     padding: 16,
@@ -296,15 +299,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     alignItems: 'flex-start',
   },
-  detailLabel: {
-    fontWeight: '500',
-    width: 80,
-    color: '#555',
-  },
-  detailValue: {
-    flex: 1,
-    color: '#333',
-  },
+  detailLabel: { fontWeight: '500', width: 80, color: '#555' },
+  detailValue: { flex: 1, color: '#333' },
   actionsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -322,12 +318,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginHorizontal: 6,
   },
-  disabledButtonGreen: {
-    backgroundColor: '#4CAF50',
-  },
-  actionIcon: {
-    marginRight: 8,
-  },
+  disabledButtonGreen: { backgroundColor: '#4CAF50' },
+  actionIcon: { marginRight: 8 },
   actionButtonText: {
     color: '#fff',
     fontWeight: 'bold',
@@ -335,19 +327,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   doneButton: {
-    backgroundColor: '#0288D1', // A slightly different blue for primary action
+    backgroundColor: '#0288D1',
     paddingVertical: 15,
     marginHorizontal: 16,
-    marginTop: 8, // Added some top margin
+    marginTop: 8,
     marginBottom: 16,
     borderRadius: 8,
     alignItems: 'center',
   },
-  doneButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  doneButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   reminderInfoText: {
     textAlign: 'center',
     color: '#666',
@@ -356,6 +344,3 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
-
-export default AppointmentConfirmationScreen;
-

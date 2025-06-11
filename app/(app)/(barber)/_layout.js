@@ -1,9 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Tabs } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
 import theme from "@/styles/theme"; // Adjusted path
+import { Stack } from 'expo-router';
+import { Slot } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-export default function BarberTabLayout() {
+export default function RootLayout() {
+  useEffect(() => {
+    SplashScreen.hideAsync();
+  }, []);
+
+  return (
+    <SafeAreaProvider>
+      <Slot />
+    </SafeAreaProvider>
+  );
+}
+export function BarberTabLayout() {
   return (
     <Tabs
       screenOptions={{

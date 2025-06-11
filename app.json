@@ -4,7 +4,10 @@
     "slug": "barber-clean",
     "version": "1.0.0",
     "sdkVersion": "53.0.0",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "barber",
@@ -17,13 +20,34 @@
     "updates": {
       "fallbackToCacheTimeout": 0
     },
-    "assetBundlePatterns": ["**/*"],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.barber"
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+"ios": {
+  "supportsTablet": true,
+  "bundleIdentifier": "com.ScheduleSync.barber",
+  "infoPlist": {
+    "NSCalendarsUsageDescription": "This app needs access to your calendar.",
+    "NSRemindersUsageDescription": "This app needs access to your reminders.",
+    "NSAppTransportSecurity": {
+      "NSAllowsArbitraryLoads": true
+    }
+  },
+  "buildNumber": "3"
+},
+
+"android": {
+      "package": "com.ScheduleSync.barber"
     },
-    "android": {
-      "package": "com.yourcompany.barber"
+    "plugins": [
+      "expo-asset",
+      "expo-router"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "34c586b7-af2c-411d-9fbd-5cb699e2b12e"
+      }
     }
   }
 }

@@ -2,8 +2,35 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
-import { db, auth } from './firebase';
+import { db } from '@/services/firebase';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import * as Calendar from 'react-native-calendars';
+
+export async function requestPermissions() {
+  await Notifications.requestPermissionsAsync();
+  if (Platform.OS === 'ios') {
+    await Calendar.requestCalendarPermissionsAsync();
+  } else {
+    await Calendar.requestPermissionsAsync();
+  }
+}
+export async function addAppointmentToCalendar(appointment, service, barber) {
+  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  const defaultCalendar = calendars.find(cal => cal.allowsModifications) || calendars[0];
+
+  const startDate = new Date(`${appointment.date}T${appointment.time}`);
+  const endDate = new Date(startDate.getTime() + (service.duration || 30) * 60000);
+
+  const eventId = await Calendar.createEventAsync(defaultCalendar.id, {
+    title: `${service.name} with ${barber.name}`,
+    startDate,
+    endDate,
+    notes: `Location: ${barber.address || ''}\nPhone: ${barber.phone || ''}`,
+    timeZone: 'America/New_York',
+  });
+
+  return eventId;
+}
 
 // Configure notifications
 Notifications.setNotificationHandler({

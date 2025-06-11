@@ -1,0 +1,12 @@
+{
+  "react-native": {
+    "appId": "1:737852188063:ios:8ecc001eee6651e3d849aa",
+    "displayName": "barber-clean"
+  },
+  
+  "ios": {
+    "bundleIdentifier": "com.ScheduleSync.barber"
+  }
+}
+
+

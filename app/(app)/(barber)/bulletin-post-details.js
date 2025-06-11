@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getUserProfile, auth, getBulletinPostDetails, addCommentToBulletinPost } from '@/services/firebase'; // Adjusted path
+//import { getUserProfile, auth, getBulletinPostDetails, addCommentToBulletinPost } from '@/services/firebase'; // Adjusted path
+import { getUserProfile, getBulletinPostDetails, addCommentToBulletinPost } from '@/services/firebase'; // Adjusted path
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 const BulletinPostDetailsScreen = () => {

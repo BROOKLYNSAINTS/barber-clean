@@ -1,6 +1,20 @@
 import { Stack } from "expo-router";
+import { Slot, SplashScreen } from 'expo-router';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import React, { useState, useEffect } from 'react';
+// 
+//export default function authLayout() {
+//  useEffect(() => {
+//    SplashScreen.hideAsync();
+//  }, []);
 
-export default function AuthLayout() {
+//  return (
+//    <SafeAreaProvider>
+//      <Slot />
+//    </SafeAreaProvider>
+//  );
+//}
+export default function authLayout() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="login" />

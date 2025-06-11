@@ -1,0 +1,19 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Run Copilot CLI",
+			"type": "shell",
+			"command": "github-copilot",
+			"args": [],
+			"group": "none",
+			"isBackground": false,
+			"problemMatcher": [],
+			"options": {
+				"env": {
+					"PATH": "/usr/local/bin:/opt/homebrew/bin:${env:PATH}"
+				}
+			}
+		}
+	]
+}

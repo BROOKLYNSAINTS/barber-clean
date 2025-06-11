@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getUserProfile, auth, getBarbersByZipcode } from '@/services/firebase'; // Adjusted path
+//import { getUserProfile, auth, getBarbersByZipcode } from '@/services/firebase'; // Adjusted path
+import { getUserProfile, getBarbersByZipcode } from '@/services/firebase'; // Adjusted path
+
 import { useRouter, useFocusEffect } from 'expo-router';
 import theme from '@/styles/theme'; // Adjusted path
 import { ScreenContainer, ScreenHeader } from '@/components/LayoutComponents'; // Adjusted path

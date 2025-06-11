@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getBarberAppointments, getUserProfile, auth } from '@/services/firebase'; // Adjusted path
+//import { getBarberAppointments, getUserProfile, auth } from '@/services/firebase'; // Adjusted path
+import { getBarberAppointments, getUserProfile } from '@/services/firebase'; // Adjusted path
+
 import { useRouter, useFocusEffect } from 'expo-router';
 
 const BarberDashboardScreen = () => {

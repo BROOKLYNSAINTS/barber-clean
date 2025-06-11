@@ -18,7 +18,7 @@ import * as Speech from 'expo-speech';
 // For simplicity, I'll assume expo-speech is for Text-to-Speech and voice input might need a different setup if Voice.start was from a different library.
 // If expo-speech was intended for STT as well, its API might have changed. For now, commenting out Voice specific parts if they cause issues.
 
-const ChatAssistantScreen = () => {
+const ChatScreen = () => {
   const [messages, setMessages] = useState([
     { id: '1', text: "Hello! I'm your barber shop assistant. How can I help you today?", sender: 'assistant' },
   ]);
@@ -253,7 +253,6 @@ const styles = StyleSheet.create({
   },
 });
 
-export default function Screen() {
-  return <ChatAssistantScreen />;
-}
+export default ChatScreen;
+
 
