@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIn
 import { CardField, useStripe } from "@stripe/stripe-react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { initializeStripe, createSubscription } from "@/services/stripe"; // Adjusted path
-import { getUserProfile, updateUserProfile, auth } from "@/services/firebase"; // Adjusted path
+//import { getUserProfile, updateUserProfile, auth } from "@/services/firebase"; // Adjusted path
+import { getUserProfile, updateUserProfile } from "@/services/firebase"; // Adjusted path
 import { useRouter, useFocusEffect } from "expo-router";
 import theme from "@/styles/theme"; // Adjusted path
 import { ScreenContainer, ScreenHeader } from "@/components/LayoutComponents"; // Adjusted path

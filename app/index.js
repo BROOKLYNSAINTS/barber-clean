@@ -1,10 +1,18 @@
-import { Redirect } from "expo-router";
+import { useEffect } from 'react';
+import { router } from 'expo-router';
+
+import { Redirect } from 'expo-router';
 
 export default function Index() {
-  // This is the root entry point of the app.
-  // It should ideally check authentication status and redirect accordingly.
-  // For now, we redirect to the authentication flow.
-  // The (auth) group will handle its own initial screen (e.g., login).
+
+
+  
+  useEffect(() => {
+  const timeout = setTimeout(() => {
+    router.replace('/(auth)/login');
+  }, 50); // Give router time to mount
+  return () => clearTimeout(timeout);
+}, []);
+
   return <Redirect href="/(auth)/login" />;
 }
-

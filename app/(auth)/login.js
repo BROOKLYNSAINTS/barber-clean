@@ -1,16 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { loginUser } from '@/services/firebase'; // ✅ Correct import
 import { useRouter } from 'expo-router';
+import { loginWithEmail } from '@/services/restAuth';
+import { registerForPushNotifications, saveNotificationToken } from '@/services/notifications';
+import { FIREBASE_API_KEY } from '@env';
+import DebugUser from '@/components/DebugUser';
+import { useAuth } from '@/contexts/AuthContext';
+console.log("🔑 Firebase API Key from env:", FIREBASE_API_KEY);
 
-const LoginScreen = () => {
+export default function LoginWithEmail () {  
+  
+  
+  
   const router = useRouter();
+  const devBypass = false; // ✅ Set to false when ready to test login normally
+
+  useEffect(() => {
+    if (devBypass) {
+      console.log('🛠 Dev bypass active. Redirecting to /customer...');
+      router.replace('/(app)/(customer)/');
+    }
+  }, []);
+
+  // Skip rendering form if bypassing
+  if (devBypass) return null;
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleLogin = async () => {
+    console.log('🔄 Login button pressed');
     try {
       if (!email || !password) {
         setError('Please enter both email and password');
@@ -18,11 +39,19 @@ const LoginScreen = () => {
       }
       setLoading(true);
       setError('');
-      const user = await loginUser(email, password); // ✅ Correct usage
-      router.replace('/(app)/(customer)/'); 
+      console.log('📤 Sending credentials to Firebase...');
+      const user = await loginWithEmail(email, password);
+      console.log('✅ Firebase login response:', user);
+      router.replace('/(app)/(customer)');
+
+      const token = await registerForPushNotifications();
+      console.log('🔔 Notification token:', token);
+      if (token) {
+        await saveNotificationToken(user.uid, token);
+      }
     } catch (error) {
-      console.error('Login error:', error);
-      setError(error.message);
+      console.log('Login error:', error);
+      console.log('🚫 Login error:', error);    
     } finally {
       setLoading(false);
     }
@@ -141,4 +170,3 @@ const styles = StyleSheet.create({
   },
 });
 
-export default LoginScreen;

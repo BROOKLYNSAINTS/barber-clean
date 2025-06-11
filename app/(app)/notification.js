@@ -4,6 +4,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { registerForPushNotificationsAsync, getCalendarPermissions } from '@/services/notifications';
 import { getUserProfile, updateUserProfile, auth } from '@/services/firebase';
 
+
+
+
+
+
+
+
 const NotificationSettingsScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

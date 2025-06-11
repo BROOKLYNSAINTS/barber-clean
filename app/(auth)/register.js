@@ -25,8 +25,10 @@ const RegisterScreen = () => {
       setError('');
       const user = await registerUser(email, password);
       // Navigate to profile setup
-      router.push({ pathname: '/(auth)/profile-setup', params: { userId: user.uid } });
+      router.push({ pathname: '(auth)/profile-setup', params: { userId: user.uid } });
     } catch (error) {
+
+      console.log('Registration error:', error);
       console.error('Registration error:', error);
       setError(error.message);
     } finally {

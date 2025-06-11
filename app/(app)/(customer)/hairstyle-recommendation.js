@@ -115,7 +115,7 @@ const HairStyleRecommendationScreen = () => {
           <Text style={styles.recommendationText}>{recommendation}</Text>
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.resetButton} onPress={handleReset}><Text style={styles.resetButtonText}>Try Different Preferences</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.bookButton} onPress={() => router.push('/(app)/(customer)/select-barber')}><Text style={styles.bookButtonText}>Book Appointment</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.bookButton} onPress={() => router.push('/(app)/(customer)/barber-selection')}><Text style={styles.bookButtonText}>Book Appointment</Text></TouchableOpacity>
           </View>
         </View>
       )}
@@ -280,4 +280,3 @@ const styles = StyleSheet.create({
 });
 
 export default HairStyleRecommendationScreen;
-

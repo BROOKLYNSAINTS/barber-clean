@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getUserProfile, auth, getBulletinPosts, createBulletinPost } from '@/services/firebase'; // Adjusted path
+//import { getUserProfile, auth, getBulletinPosts, createBulletinPost } from '@/services/firebase'; // Adjusted path
+import { getUserProfile, getBulletinPosts, createBulletinPost } from '@/services/firebase'; // Adjusted path
+
 import { useRouter, useFocusEffect } from 'expo-router';
 
 const BarberBulletinScreen = () => {

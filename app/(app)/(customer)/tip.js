@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { processPayment } from '@/services/stripe';
-import { getUserProfile, updateUserProfile, auth } from '@/services/firebase';
+import { getUserProfile, updateUserProfile } from '@/services/firebase';
+
 
 const TipScreen = ({ route, navigation }) => {
   const { appointment } = route.params;

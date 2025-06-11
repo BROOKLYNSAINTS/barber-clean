@@ -1,255 +1,139 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
+  Button,
+  ActivityIndicator,
   Alert,
+  ScrollView,
+  StyleSheet,
 } from 'react-native';
-import { updateUserProfile, auth } from '@/services/firebase';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAuth } from '../../../src/contexts/AuthContext';
+import { getFirestore, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { app } from '../../../src/services/firebase';
+import { updatePassword } from 'firebase/auth';
 
-const EditProfileScreen = () => {
-  const router = useRouter();
-  const { profile: profileParam } = useLocalSearchParams();
-  const profile = JSON.parse(profileParam);
+const db = getFirestore(app);
 
-  const [name, setName] = useState(profile?.name || '');
-  const [phone, setPhone] = useState(profile?.phone || '');
-  const [address, setAddress] = useState(profile?.address || '');
-  const [zipcode, setZipcode] = useState(profile?.zipcode || '');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+export default function EditProfileScreen() {
+  const { currentUser, loading: authLoading } = useAuth();
+  const [loading, setLoading] = useState(true);
 
-  const [cardNumber, setCardNumber] = useState(profile?.paymentInfo?.cardNumber || '');
-  const [expiryDate, setExpiryDate] = useState(profile?.paymentInfo?.expiryDate || '');
-  const [cvv, setCvv] = useState(profile?.paymentInfo?.cvv || '');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [zipcode, setZipcode] = useState('');
+  const [email, setEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
 
-  const handleUpdateProfile = async () => {
+  useEffect(() => {
+    const loadData = async () => {
+      if (!currentUser?.uid) return;
+
+      try {
+        const ref = doc(db, 'users', currentUser.uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const data = snap.data();
+          setName(data.name || '');
+          setPhone(data.phone || '');
+          setAddress(data.address || '');
+          setZipcode(data.zipcode || '');
+          setEmail(currentUser.email || '');
+        }
+      } catch (err) {
+        console.error('Error loading profile:', err);
+        Alert.alert('Error', 'Failed to load profile.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [currentUser]);
+
+  const handleSave = async () => {
+    if (!currentUser?.uid) return;
+
     try {
-      if (!name || !phone || !address || !zipcode) {
-        setError('Please fill in all required fields');
-        return;
-      }
-
-      if (profile.role === 'barber' && (!cardNumber || !expiryDate || !cvv)) {
-        setError('Please fill in all payment information');
-        return;
-      }
-
       setLoading(true);
-      setError('');
+      const ref = doc(db, 'users', currentUser.uid);
+      await updateDoc(ref, { name, phone, address, zipcode });
 
-      const userData = {
-        name,
-        phone,
-        address,
-        zipcode,
-        role: profile.role,
-      };
-
-      if (profile.role === 'barber') {
-        userData.paymentInfo = {
-          cardNumber,
-          expiryDate,
-          cvv,
-          subscriptionActive: profile.paymentInfo?.subscriptionActive || true,
-          subscriptionDate: profile.paymentInfo?.subscriptionDate || new Date().toISOString(),
-        };
+      if (newPassword) {
+        await updatePassword(currentUser, newPassword);
+        Alert.alert('Success', 'Profile and password updated!');
+      } else {
+        Alert.alert('Success', 'Profile updated!');
       }
-
-      const user = auth.currentUser;
-      await updateUserProfile(user, userData);
-
-      Alert.alert('Success', 'Profile updated successfully', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
-    } catch (error) {
-      console.error('Profile update error:', error);
-      setError(error.message);
+    } catch (err) {
+      console.error('Error saving profile:', err);
+      Alert.alert('Error', 'Could not save profile.');
     } finally {
       setLoading(false);
     }
   };
 
+  if (authLoading || loading) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" />
+        <Text>Loading profile...</Text>
+      </View>
+    );
+  }
+
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Edit Profile</Text>
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      <Text style={styles.label}>Name</Text>
+      <TextInput value={name} onChangeText={setName} style={styles.input} />
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Full Name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your full name"
-          value={name}
-          onChangeText={setName}
-        />
-      </View>
+      <Text style={styles.label}>Address</Text>
+      <TextInput value={address} onChangeText={setAddress} style={styles.input} />
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Phone Number</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your phone number"
-          value={phone}
-          onChangeText={setPhone}
-          keyboardType="phone-pad"
-        />
-      </View>
+      <Text style={styles.label}>Zip Code</Text>
+      <TextInput value={zipcode} onChangeText={setZipcode} style={styles.input} keyboardType="number-pad" />
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Address</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your address"
-          value={address}
-          onChangeText={setAddress}
-        />
-      </View>
+      <Text style={styles.label}>Phone</Text>
+      <TextInput value={phone} onChangeText={setPhone} style={styles.input} keyboardType="phone-pad" />
 
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Zipcode</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your zipcode"
-          value={zipcode}
-          onChangeText={setZipcode}
-          keyboardType="numeric"
-        />
-      </View>
+      <Text style={styles.label}>Username (Email)</Text>
+      <TextInput value={email} editable={false} style={[styles.input, styles.disabled]} />
 
-      {profile.role === 'barber' && (
-        <View style={styles.barberSection}>
-          <Text style={styles.sectionTitle}>Payment Information</Text>
-          <Text style={styles.sectionSubtitle}>
-            $30 monthly subscription fee will be charged
-          </Text>
+      <Text style={styles.label}>New Password</Text>
+      <TextInput value={newPassword} onChangeText={setNewPassword} style={styles.input} secureTextEntry />
 
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Card Number</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your card number"
-              value={cardNumber}
-              onChangeText={setCardNumber}
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Expiry Date (MM/YY)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="MM/YY"
-              value={expiryDate}
-              onChangeText={setExpiryDate}
-            />
-          </View>
-
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>CVV</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter CVV"
-              value={cvv}
-              onChangeText={setCvv}
-              keyboardType="numeric"
-              secureTextEntry
-            />
-          </View>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleUpdateProfile}
-        disabled={loading}
-      >
-        <Text style={styles.buttonText}>
-          {loading ? 'Updating...' : 'Update Profile'}
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={[styles.button, styles.cancelButton]}
-        onPress={() => router.back()}
-      >
-        <Text style={styles.buttonText}>Cancel</Text>
-      </TouchableOpacity>
+      <Button title="Save Changes" onPress={handleSave} />
     </ScrollView>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
     padding: 20,
+    paddingBottom: 40,
     backgroundColor: '#fff',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: 15,
+  centered: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   label: {
-    marginBottom: 5,
-    fontWeight: '500',
+    marginTop: 16,
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    borderColor: '#ccc',
+    borderRadius: 6,
+    padding: 10,
+    marginTop: 4,
+    marginBottom: 12,
   },
-  barberSection: {
-    marginTop: 10,
-    marginBottom: 20,
-    padding: 15,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 5,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 15,
-  },
-  button: {
-    backgroundColor: '#2196F3',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  cancelButton: {
-    backgroundColor: '#9e9e9e',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  errorText: {
-    color: 'red',
-    marginBottom: 10,
-    textAlign: 'center',
+  disabled: {
+    backgroundColor: '#f0f0f0',
   },
 });
-
-// ✅ Expo Router screen export
-export default function Screen() {
-  return <EditProfileScreen />;
-}

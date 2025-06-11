@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getCustomerAppointments, auth } from '@/services/firebase'; // Adjusted path
 import { useRouter, useFocusEffect } from 'expo-router';
 
-const AppointmentHistoryScreen = () => {
+const AppointmentsScreen = () => {
   const router = useRouter();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -14,8 +14,8 @@ const AppointmentHistoryScreen = () => {
     try {
       setLoading(true);
       setError('');
-      
-      const user = auth.currentUser;
+
+  const user = auth.currentUser;
       if (user) {
         // Assuming getCustomerAppointments fetches appointments for the logged-in customer
         const appointmentsData = await getCustomerAppointments(user.uid);
@@ -30,7 +30,7 @@ const AppointmentHistoryScreen = () => {
       } else {
         setError('User not authenticated');
         // Optionally redirect to login if user is not found
-        // router.replace('/(auth)/login');
+         router.replace('/(auth)/login');
       }
     } catch (error) {
       console.error('Error fetching appointments:', error);
@@ -315,5 +315,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default AppointmentHistoryScreen;
-
+export default AppointmentsScreen;
