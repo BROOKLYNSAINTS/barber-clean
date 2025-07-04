@@ -145,6 +145,15 @@ const AIBookingAssistantScreen = () => {
 
   const dates = generateDates();
 
+  // Add this utility function near the top or with your helpers:
+  const safeFormatDate = (dateString, options = { weekday: 'short', month: 'short', day: 'numeric' }) => {
+    if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return 'N/A';
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return 'N/A';
+    const dateObj = new Date(year, month - 1, day);
+    return dateObj.toLocaleDateString(undefined, options);
+  };
+
   if (!barber || !service) {
     return (
       <View style={styles.centered}>

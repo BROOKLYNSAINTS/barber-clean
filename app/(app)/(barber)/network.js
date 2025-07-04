@@ -6,6 +6,7 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import theme from '@/styles/theme'; // Adjusted path
 import { ScreenContainer, ScreenHeader } from '@/components/LayoutComponents'; // Adjusted path
 import { Button, Card, EmptyState } from '@/components/UIComponents'; // Adjusted path
+import { startOrGetChatThread } from '@/services/chatService'; // Make sure this path is correct
 
 const BarberNetworkScreen = () => {
   const router = useRouter();
@@ -91,14 +92,25 @@ const BarberNetworkScreen = () => {
     }
   };
 
-  const handleMessageBarber = (barber) => {
-    Alert.alert(
-      'Feature Coming Soon',
-      `Direct messaging with ${barber.name || 'this barber'} will be available in a future update.`
-    );
-    // Example of how to navigate if a chat screen exists:
-    // router.push({ pathname: '/(app)/(barber)/chat', params: { recipientId: barber.id, recipientName: barber.name } });
-  };
+const handleMessageBarber = async (barber) => {
+  console.log('Message button pressed for barber:', barber.name);
+  try {
+    const currentUserId = auth.currentUser?.uid;
+    if (!currentUserId || !barber.id) {
+      Alert.alert('Missing Info', 'Unable to identify both users for chat.');
+      return;
+    }
+
+    const threadId = await startOrGetChatThread(currentUserId, barber.id);
+  router.push({
+  pathname: '/(app)/(barber)/chat',
+  params: { threadId }, // ✅ this is correct if chat.js expects threadId
+});
+  } catch (err) {
+    console.error('Failed to initiate chat:', err);
+    Alert.alert('Error', 'Could not start chat. Please try again later.');
+  }
+};
 
   const renderBarberItem = ({ item }) => (
     <Card style={styles.barberCard}>

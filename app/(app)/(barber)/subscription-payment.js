@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-//import { getUserProfile, updateUserProfile, auth } from "@/services/firebase"; // Adjusted path
-import { getUserProfile, updateUserProfile} from "@/services/firebase"; // Adjusted path
+import { getUserProfile, updateUserProfile, auth } from "@/services/firebase"; // Adjusted path
 import { StripeProvider, CardField, useStripe } from "@stripe/stripe-react-native";
 import { useRouter, useFocusEffect } from "expo-router";
 import theme from "@/styles/theme"; // Adjusted path
@@ -221,9 +220,13 @@ const SubscriptionPaymentScreen = () => {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
+    if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return "N/A";
     try {
-      return new Date(dateString).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+      // Parse as local date to avoid UTC shift bug
+      const [year, month, day] = dateString.split('-').map(Number);
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return "Invalid Date";
+      const dateObj = new Date(year, month - 1, day);
+      return dateObj.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
     } catch (e) {
       return "Invalid Date";
     }

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { loginWithEmail } from '@/services/restAuth';
+import { getUserProfile } from '@/services/firebase'; // Add this at the top
+
 import { registerForPushNotifications, saveNotificationToken } from '@/services/notifications';
 import { FIREBASE_API_KEY } from '@env';
 import DebugUser from '@/components/DebugUser';
@@ -30,32 +32,44 @@ export default function LoginWithEmail () {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleLogin = async () => {
-    console.log('🔄 Login button pressed');
-    try {
-      if (!email || !password) {
-        setError('Please enter both email and password');
-        return;
-      }
-      setLoading(true);
-      setError('');
-      console.log('📤 Sending credentials to Firebase...');
-      const user = await loginWithEmail(email, password);
-      console.log('✅ Firebase login response:', user);
-      router.replace('/(app)/(customer)');
-
-      const token = await registerForPushNotifications();
-      console.log('🔔 Notification token:', token);
-      if (token) {
-        await saveNotificationToken(user.uid, token);
-      }
-    } catch (error) {
-      console.log('Login error:', error);
-      console.log('🚫 Login error:', error);    
-    } finally {
-      setLoading(false);
+const handleLogin = async () => {
+  console.log('🔄 Login button pressed');
+  try {
+    if (!email || !password) {
+      setError('Please enter both email and password');
+      return;
     }
-  };
+    setLoading(true);
+    setError('');
+    console.log('📤 Sending credentials to Firebase...');
+    const user = await loginWithEmail(email, password);
+    console.log('✅ Firebase login response:', user);
+
+    // 👇 Fetch Firestore profile
+    const profile = await getUserProfile(user.uid);
+    console.log('🎭 User role from Firestore:', profile?.role);
+
+
+    // 👇 Role-based redirect
+    if (profile?.role === 'barber') {
+      router.replace('/(app)/(barber)/dashboard');
+    } else {
+      router.replace('/(app)/(customer)');
+    }
+
+    // ✅ Notification setup
+    const token = await registerForPushNotifications();
+    console.log('🔔 Notification token:', token);
+    if (token) {
+      await saveNotificationToken(user.uid, token);
+    }
+  } catch (error) {
+    console.log('🚫 Login error:', error);
+    setError('Login failed. Please try again.');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <ScrollView contentContainerStyle={styles.container}>

@@ -4,7 +4,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { db } from '@/services/firebase';
 import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
-import * as Calendar from 'react-native-calendars';
+import * as Calendar from 'expo-calendar';
 
 export async function requestPermissions() {
   await Notifications.requestPermissionsAsync();
@@ -14,11 +14,67 @@ export async function requestPermissions() {
     await Calendar.requestPermissionsAsync();
   }
 }
+
+// Utility to convert 12-hour time with unicode spaces to 24-hour format
+function to24Hour(timeStr) {
+  if (!timeStr) return '';
+  timeStr = String(timeStr).replace(/[\u202F\u00A0\u2009\u2007\u200A\u200B\u200C\u200D\uFEFF\s]+/g, ' ').trim();
+  const parts = timeStr.split(' ');
+  const time = parts[0];
+  const modifier = parts[1] ? parts[1].toUpperCase() : '';
+  if (!time) return '';
+  let [hours, minutes] = time.split(':');
+  hours = hours.padStart(2, '0');
+  if (modifier === 'PM' && hours !== '12') {
+    hours = String(parseInt(hours, 10) + 12).padStart(2, '0');
+  }
+  if (modifier === 'AM' && hours === '12') {
+    hours = '00';
+  }
+  return `${hours}:${minutes ? minutes.padStart(2, '0') : '00'}`;
+}
+
+function getAppointmentDate(dateStr, timeStr) {
+  let time24 = to24Hour(timeStr);
+  if (/^\d{2}:\d{2}$/.test(time24)) {
+    time24 += ':00';
+  }
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const timeRegex = /^\d{2}:\d{2}(:\d{2})?$/;
+  if (!dateRegex.test(dateStr) || !timeRegex.test(time24)) {
+    console.error('Invalid date or time format', { dateStr, timeStr, time24 });
+    throw new Error('Invalid date or time format');
+  }
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hours, minutes, seconds] = time24.split(':').map(Number);
+  if (
+    isNaN(year) || isNaN(month) || isNaN(day) ||
+    isNaN(hours) || isNaN(minutes) || (seconds !== undefined && isNaN(seconds))
+  ) {
+    console.error('Date or time contains NaN', { year, month, day, hours, minutes, seconds });
+    throw new RangeError('Date value out of bounds');
+  }
+  const dateObj = new Date(year, month - 1, day, hours, minutes, seconds || 0);
+  if (isNaN(dateObj.getTime())) {
+    console.error('Constructed date is invalid', { year, month, day, hours, minutes, seconds });
+    throw new RangeError('Date value out of bounds');
+  }
+  return dateObj;
+}
+
 export async function addAppointmentToCalendar(appointment, service, barber) {
   const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   const defaultCalendar = calendars.find(cal => cal.allowsModifications) || calendars[0];
 
-  const startDate = new Date(`${appointment.date}T${appointment.time}`);
+  // Sanitize and convert time to 24-hour format
+  const time24 = to24Hour(appointment.time);
+  // Combine date and time in ISO format
+  const startDateStr = `${appointment.date}T${time24}:00`;
+  const startDate = new Date(startDateStr);
+  if (isNaN(startDate.getTime())) {
+    console.error('Invalid startDate:', { startDateStr, appointment });
+    throw new RangeError('Date value out of bounds');
+  }
   const endDate = new Date(startDate.getTime() + (service.duration || 30) * 60000);
 
   const eventId = await Calendar.createEventAsync(defaultCalendar.id, {
@@ -160,38 +216,44 @@ export const scheduleLocalNotification = async (title, body, trigger) => {
 // Schedule appointment reminder
 export const scheduleAppointmentReminder = async (appointment) => {
   try {
-    const { date, startTime, serviceName, barberName } = appointment;
-    
-    // Schedule reminder for 24 hours before
-    const reminderDate = new Date(date);
-    const [hours, minutes] = startTime.split(':');
-    reminderDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0);
-    reminderDate.setDate(reminderDate.getDate() - 1);
-    
+    const { date, serviceName, barberName } = appointment;
+    const startTime = appointment.startTime || appointment.time;
+    if (!date || !startTime) throw new Error('Missing date or time');
+
+    // Use robust date/time parsing
+    const appointmentDate = getAppointmentDate(date, startTime);
+    const oneDayBefore = new Date(appointmentDate.getTime());
+    oneDayBefore.setDate(oneDayBefore.getDate() - 1);
+    const oneHourBefore = new Date(appointmentDate.getTime());
+    oneHourBefore.setHours(oneHourBefore.getHours() - 1);
+
+    console.log('[Reminder Debug] appointmentDate:', appointmentDate);
+    console.log('[Reminder Debug] oneDayBefore:', oneDayBefore, 'now:', new Date());
+    console.log('[Reminder Debug] oneHourBefore:', oneHourBefore, 'now:', new Date());
+
     // Only schedule if reminder time is in the future
-    if (reminderDate > new Date()) {
+    if (oneDayBefore > new Date()) {
+      console.log('[Reminder Debug] Scheduling 1-day reminder for:', oneDayBefore);
       await scheduleLocalNotification(
         'Appointment Reminder',
         `You have a ${serviceName} appointment with ${barberName} tomorrow at ${startTime}.`,
-        { date: reminderDate }
+        { date: oneDayBefore }
       );
+    } else {
+      console.log('[Reminder Debug] 1-day reminder not scheduled (in the past)');
     }
-    
-    // Schedule reminder for 1 hour before
-    const hourReminderDate = new Date(date);
-    hourReminderDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0);
-    hourReminderDate.setHours(hourReminderDate.getHours() - 1);
-    
-    // Only schedule if reminder time is in the future
-    if (hourReminderDate > new Date()) {
+    if (oneHourBefore > new Date()) {
+      console.log('[Reminder Debug] Scheduling 1-hour reminder for:', oneHourBefore);
       await scheduleLocalNotification(
         'Upcoming Appointment',
         `Your ${serviceName} appointment with ${barberName} is in 1 hour.`,
-        { date: hourReminderDate }
+        { date: oneHourBefore }
       );
+    } else {
+      console.log('[Reminder Debug] 1-hour reminder not scheduled (in the past)');
     }
   } catch (error) {
-    console.error('Error scheduling appointment reminder:', error);
+    console.error('[Reminder Debug] Error scheduling appointment reminder:', error);
   }
 };
 
@@ -217,10 +279,13 @@ export const addNotificationResponseListener = (callback) => {
 };
 
 export default {
+  requestPermissions,
+  addAppointmentToCalendar,
   registerForPushNotifications,
   saveNotificationToken,
   updateNotificationSettings,
   getNotificationSettings,
+  getDefaultNotificationSettings,
   scheduleLocalNotification,
   scheduleAppointmentReminder,
   cancelAllNotifications,

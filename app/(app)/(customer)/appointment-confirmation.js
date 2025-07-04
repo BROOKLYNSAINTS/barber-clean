@@ -9,7 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-//import * as Calendar from 'expo-calendar';
+import * as Calendar from 'expo-calendar';
 import * as Notifications from 'expo-notifications';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import DebugUser from '@/components/DebugUser';
@@ -24,6 +24,45 @@ const safeParse = (input) => {
   }
 };
 
+function to24Hour(timeStr) {
+  // Replace all unicode spaces (including U+202F, \u00A0, etc.) with a normal space, then trim
+  timeStr = timeStr.replace(/[\u202F\u00A0\s]+/g, ' ').trim();
+  // Split by space to separate time and AM/PM
+  const parts = timeStr.split(' ');
+  const time = parts[0];
+  const modifier = parts[1] ? parts[1].toUpperCase() : '';
+  if (!time) return '';
+  let [hours, minutes] = time.split(':');
+  if (modifier === 'PM' && hours !== '12') {
+    hours = String(parseInt(hours, 10) + 12);
+  }
+  if (modifier === 'AM' && hours === '12') {
+    hours = '00';
+  }
+  return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+}
+
+function getAppointmentDate(dateStr, timeStr) {
+  const time24 = to24Hour(timeStr);
+  // Validate date and time
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const timeRegex = /^\d{2}:\d{2}(:\d{2})?$/;
+  if (!dateRegex.test(dateStr) || !timeRegex.test(time24)) {
+    throw new Error('Invalid date or time format');
+  }
+  return new Date(`${dateStr}T${time24}`);
+}
+
+// Set the notification handler with updated properties
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true, // shows a banner when the notification is received
+    shouldShowList: true,   // shows in the notification center/list
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
+
 export default function AppointmentConfirmationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -37,9 +76,13 @@ export default function AppointmentConfirmationScreen() {
   const [reminderSet, setReminderSet] = useState(false);
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return 'N/A';
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    // Parse as local date to avoid UTC shift bug
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return 'N/A';
+    const dateObj = new Date(year, month - 1, day);
+    return dateObj.toLocaleDateString(undefined, options);
   };
 
   const addToCalendar = async () => {
@@ -55,14 +98,27 @@ export default function AppointmentConfirmationScreen() {
 
       const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
       const defaultCalendar = calendars.find((cal) => cal.allowsModifications) || calendars[0];
-
       if (!defaultCalendar) {
         Alert.alert('Error', 'No writable calendar found.');
         setLoading(false);
         return;
       }
 
-      const startDate = new Date(`${appointment.date}T${appointment.time}`);
+      // Debug logs for date/time conversion
+      console.log('DEBUG appointment.date:', appointment.date);
+      console.log('DEBUG appointment.time:', appointment.time);
+      console.log('DEBUG to24Hour(appointment.time):', to24Hour(appointment.time));
+
+      let startDate;
+      try {
+        startDate = getAppointmentDate(appointment.date, appointment.time);
+        console.log('DEBUG getAppointmentDate result:', startDate);
+      } catch (err) {
+        console.error('DEBUG getAppointmentDate error:', err);
+        Alert.alert('Error', 'Invalid date or time format.');
+        setLoading(false);
+        return;
+      }
       const endDate = new Date(startDate.getTime() + (service.duration || 30) * 60000);
 
       const eventDetails = {
@@ -86,67 +142,78 @@ export default function AppointmentConfirmationScreen() {
     }
   };
 
-const scheduleReminder = async () => {
-  if (!appointment || !barber || !service) return;
-  try {
-    console.log('🟡 Scheduling reminder...');
-    console.log('📅 Appointment:', appointment);
-    console.log('👤 Barber:', barber);
-    console.log('✂️ Service:', service);
+  const scheduleReminder = async () => {
+    if (!appointment || !barber || !service) return;
+    try {
+      // Debug logs for date/time conversion
+      console.log('DEBUG appointment.date:', appointment.date);
+      console.log('DEBUG appointment.time:', appointment.time);
+      console.log('DEBUG to24Hour(appointment.time):', to24Hour(appointment.time));
 
-    setLoading(true);
-    const { status } = await Notifications.requestPermissionsAsync();
-    console.log('🔐 Notification permission status:', status);
+      let appointmentDate;
+      try {
+        appointmentDate = getAppointmentDate(appointment.date, appointment.time);
+        console.log('DEBUG getAppointmentDate result:', appointmentDate);
+      } catch (err) {
+        console.error('DEBUG getAppointmentDate error:', err);
+        Alert.alert('Error', 'Invalid date or time format.');
+        return;
+      }
 
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Notification permission is required.');
+      setLoading(true);
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Notification permission is required.');
+        setLoading(false);
+        return;
+      }
+
+      const triggerDate = new Date(appointmentDate);
+      triggerDate.setDate(triggerDate.getDate() - 1);
+      triggerDate.setHours(9, 0, 0);
+
+      const secondsUntilTrigger = Math.floor((triggerDate.getTime() - Date.now()) / 1000);
+      console.log('DEBUG triggerDate:', triggerDate);
+      console.log('DEBUG secondsUntilTrigger:', secondsUntilTrigger);
+
+      if (secondsUntilTrigger <= 0) {
+        Alert.alert('Info', 'Appointment is too soon to schedule a reminder.');
+        setLoading(false);
+        return;
+      }
+
+      const content = {
+        title: 'Upcoming Haircut Appointment',
+        body: `Reminder: ${service.name} with ${barber.name} is tomorrow at ${appointment.time}`,
+        data: { appointmentId: appointment.id },
+      };
+
+      await Notifications.scheduleNotificationAsync({
+        content,
+        trigger: { seconds: secondsUntilTrigger, repeats: false },
+      });
+
+      setReminderSet(true);
+      Alert.alert(
+        'Success',
+        `Reminder scheduled for 9 AM the day before your appointment on ${appointment.date} at ${appointment.time}.`
+      );
+    } catch (error) {
+      console.error('❌ Error scheduling reminder:', error);
+      Alert.alert('Error', 'Failed to set reminder.');
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const appointmentDate = new Date(`${appointment.date}T${appointment.time}`);
-    const triggerDate = new Date(appointmentDate);
-    triggerDate.setDate(triggerDate.getDate() - 1);
-    triggerDate.setHours(9, 0, 0);
-
-    const secondsUntilTrigger = Math.floor((triggerDate.getTime() - Date.now()) / 1000);
-
-    if (secondsUntilTrigger <= 0) {
-      Alert.alert('Info', 'Appointment is too soon to schedule a reminder.');
-      setLoading(false);
-      return;
-    }
-
-    const content = {
-      title: 'Upcoming Haircut Appointment',
-      body: `Reminder: ${service.name} with ${barber.name} is tomorrow at ${appointment.time}`,
-      data: { appointmentId: appointment.id },
-    };
-
-    await Notifications.scheduleNotificationAsync({
-      content,
-      trigger: { seconds: secondsUntilTrigger, repeats: false },
-    });
-
-    console.log('✅ Reminder scheduled successfully');
-    setReminderSet(true);
-    Alert.alert('Success', 'Reminder scheduled for 9 AM the day before.');
-  } catch (error) {
-    console.error('❌ Error scheduling reminder:', error);
-    Alert.alert('Error', 'Failed to set reminder.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
   const handleDone = () => {
-router.replace({
-  pathname: '/(app)/(customer)/appointment-details',
-  params: {
-    appointment: JSON.stringify(appointment),
-    barber: JSON.stringify(barber),
-    service: JSON.stringify(service),
-  },
-});
+    router.replace({
+      pathname: '/(app)/(customer)/appointment-details',
+      params: {
+        appointment: JSON.stringify(appointment),
+        barber: JSON.stringify(barber),
+        service: JSON.stringify(service),
+      },
+    });
   };
 
   if (!appointment || !barber || !service) {
@@ -258,6 +325,11 @@ router.replace({
       <Text style={styles.reminderInfoText}>
         You can set a reminder for the day before your appointment.
       </Text>
+
+      <View style={{ padding: 10, backgroundColor: '#ffe' }}>
+        <Text>Raw appointment.date: {String(appointment?.date)}</Text>
+        <Text>Raw appointment.time: {String(appointment?.time)}</Text>
+      </View>
     </ScrollView>
   );
 }

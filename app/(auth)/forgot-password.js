@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { resetPassword } from '@/services/firebase'; // Adjusted path
+import { resetPassword } from '@/services/authService'; // or wherever it's defined
 import { useRouter } from 'expo-router';
 
 const ForgotPasswordScreen = () => {

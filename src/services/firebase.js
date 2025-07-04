@@ -71,6 +71,18 @@ export const createUserProfile = async (userId, profileData) => {
   await setDoc(userRef, profileData, { merge: true });
 };
 
+// Update a user's profile
+export const updateUserProfile = async (userId, updatedData) => {
+  try {
+    const userRef = doc(db, 'users', userId);
+    await setDoc(userRef, updatedData, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    throw error;
+  }
+};
+
 export const getBarbersByZipcode = async (zipcode) => {
   const usersRef = collection(db, 'users');
   const q = query(usersRef, where('role', '==', 'barber'), where('zipcode', '==', zipcode));
@@ -81,7 +93,14 @@ export const getBarbersByZipcode = async (zipcode) => {
 export const getBarberServices = async (barberId) => {
   const servicesRef = collection(db, 'users', barberId, 'services');
   const snapshot = await getDocs(servicesRef);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+  const services = snapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+
+  console.log("📦 Full Service Data:", services);
+  return services;
 };
 
 export const getBarberAvailability = async (barberId, selectedDate) => {
@@ -94,7 +113,13 @@ export const getBarberAvailability = async (barberId, selectedDate) => {
   if (!workingDays || !workingHours) return [];
   if (Array.isArray(unavailableDates) && unavailableDates.includes(selectedDate)) return [];
 
-  const dateObj = new Date(selectedDate);
+  // Safely parse selectedDate as local date to avoid UTC shift bug
+  if (!selectedDate || typeof selectedDate !== 'string' || !selectedDate.includes('-')) return [];
+  const [year, month, day] = selectedDate.split('-').map(Number);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return [];
+
+  const dateObj = new Date(year, month - 1, day);
+
   const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
   if (!workingDays[dayOfWeek]) return [];
 
@@ -147,6 +172,20 @@ export const getCustomerAppointments = async (customerId) => {
     return [];
   }
 };
+// Get a single appointment by its ID
+export const getBarberAppointments = async (appointmentId) => {
+  try {
+    const apptRef = doc(db, 'appointments', appointmentId);
+    const apptSnap = await getDoc(apptRef);
+    console.log("Current UID:", auth.currentUser?.uid);
+    if (!apptSnap.exists()) return null;
+    return { id: apptSnap.id, ...apptSnap.data() };
+  } catch (error) {
+    console.error('Error fetching appointment:', error);
+    return null;
+  }
+};
+
 export const getBarberReviews = async (barberId) => {
   const reviewsRef = collection(db, 'users', barberId, 'reviews');
   const snapshot = await getDocs(reviewsRef);
@@ -169,6 +208,82 @@ export const markNotificationAsRead = async (barberId, notificationId) => {
   await updateDoc(notifRef, { read: true });
 };
 
+// Get all bulletins posts
+export const getBulletinPosts = async () => {
+  try {
+    const postsRef = collection(db, 'bulletins');
+    const snapshot = await getDocs(postsRef);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    console.error('Error fetching bulletin posts:', error);
+    return [];
+  }
+};
+
+// Add a new service for a barber
+export const addBarberService = async (barberId, serviceData) => {
+  try {
+    const servicesRef = collection(db, 'users', barberId, 'services');
+    const docRef = await addDoc(servicesRef, serviceData);
+    return { id: docRef.id, ...serviceData };
+  } catch (error) {
+    console.error('Error adding barber service:', error);
+    throw error;
+  }
+};
+
+// Create a new bulletin post
+export const createBulletinPost = async (postData) => {
+  try {
+    const postsRef = collection(db, 'bulletins'); // ✅ fixed collection name
+    const docRef = await addDoc(postsRef, postData);
+    return { id: docRef.id, ...postData };
+  } catch (error) {
+    console.error('Error creating bulletin post:', error);
+    throw error;
+  }
+};
+
+// Get a single bulletin post by its ID
+export const getBulletinPostDetails = async (postId) => {
+  try {
+    const postRef = doc(db, 'bulletins', postId);
+    const postSnap = await getDoc(postRef);
+    if (!postSnap.exists()) return null;
+    return { id: postSnap.id, ...postSnap.data() };
+  } catch (error) {
+    console.error('Error fetching bulletin post details:', error);
+    return null;
+  }
+};
+
+// Add a comment to a bulletin post
+export const addCommentToBulletinPost = async (postId, commentData) => {
+  try {
+    const commentsRef = collection(db, 'bulletins', postId, 'comments');
+    const docRef = await addDoc(commentsRef, commentData);
+    return { id: docRef.id, ...commentData };
+  } catch (error) {
+    console.error('Error adding comment to bulletin post:', error);
+    throw error;
+  }
+};
+
+export const addCommentToPost = async (postId, commentText) => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Not authenticated');
+
+  const comment = {
+    text: commentText,
+    authorId: user.uid,
+    authorName: user.displayName || 'Anonymous',
+    createdAt: new Date().toISOString(),
+  };
+
+  const commentsRef = collection(db, 'bulletins', postId, 'comments');
+  const docRef = await addDoc(commentsRef, comment);
+  return { id: docRef.id, ...comment };
+};
 
 
 export {

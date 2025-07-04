@@ -20,10 +20,26 @@ export default function AppointmentBookingScreen() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [error, setError] = useState('');
 
-  const today = new Date().toISOString().split('T')[0];
-  const maxDate = new Date();
-  maxDate.setMonth(maxDate.getMonth() + 3);
-  const maxDateStr = maxDate.toISOString().split('T')[0];
+  // Utility function to safely format a date string as YYYY-MM-DD
+  function getTodayString() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function getMaxDateString(monthsToAdd = 3) {
+    const maxDate = new Date();
+    maxDate.setMonth(maxDate.getMonth() + monthsToAdd);
+    const year = maxDate.getFullYear();
+    const month = String(maxDate.getMonth() + 1).padStart(2, '0');
+    const day = String(maxDate.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const today = getTodayString();
+  const maxDateStr = getMaxDateString();
 
   const barber = useMemo(() => {
     return params.barber ? JSON.parse(params.barber) : null;
@@ -92,7 +108,7 @@ export default function AppointmentBookingScreen() {
         customerId: currentUser.uid,
         barberId: barber.id,
         serviceId: service.id,
-        serviceName: service.style,
+        serviceName: service.name,
         servicePrice: service.price,
         date: selectedDate,
         time: selectedSlot,
@@ -195,7 +211,7 @@ export default function AppointmentBookingScreen() {
         </View>
         <View style={styles.serviceInfoRow}>
           <Text style={styles.serviceInfoLabel}>Service:</Text>
-          <Text style={styles.serviceInfoValue}>{service.style}</Text>
+          <Text style={styles.serviceInfoValue}>{service.name}</Text>
         </View>
         <View style={styles.serviceInfoRow}>
           <Text style={styles.serviceInfoLabel}>Duration:</Text>
