@@ -1,553 +1,450 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal,
+  Alert, KeyboardAvoidingView, Platform, Keyboard,
+  TouchableWithoutFeedback, ScrollView,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-//import { getUserProfile, auth, getBulletinPosts, createBulletinPost } from '@/services/firebase'; // Adjusted path
-import { getUserProfile, getBulletinPosts, createBulletinPost } from '@/services/firebase'; // Adjusted path
-
 import { useRouter, useFocusEffect } from 'expo-router';
+import {
+  getBulletinPosts,
+  createBulletinPost,
+  auth,
+  getUserProfile,
+  addCommentToPost,
+} from '@/services/firebase';
+import { getDocs, collection, query, orderBy } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 
-const BarberBulletinScreen = () => {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState('');
-  const [posts, setPosts] = useState([]);
-  const [profile, setProfile] = useState(null);
+function BulletinPost({ item, commentValue, onCommentChange, onCommentSend }) {
+  const [comments, setComments] = React.useState([]);
+  const [loadingComments, setLoadingComments] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchComments = async () => {
+      try {
+        const q = query(collection(db, 'bulletins', item.id, 'comments'), orderBy('createdAt', 'asc'));
+        const snapshot = await getDocs(q);
+        const commentData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setComments(commentData);
+      } catch (err) {
+        console.error('Error loading comments:', err);
+      } finally {
+        setLoadingComments(false);
+      }
+    };
+    fetchComments();
+  }, [item.id]);
+
+  return (
+    <View style={styles.postCard}>
+      <Text style={styles.postTitle}>{item.title}</Text>
+      <Text style={styles.postMeta}>{item.category} • {item.authorName}</Text>
+      <ScrollView style={styles.postScroll}>
+        <Text style={styles.postContent}>{item.content}</Text>
+      </ScrollView>
+      {loadingComments ? (
+        <Text style={styles.loadingText}>Loading comments...</Text>
+      ) : comments.length > 0 ? (
+        <View style={styles.commentSection}>
+<View style={styles.commentSection}>
+  {comments.map((comment) => {
+    // If comment.text is a MAP/object with the expected fields, use them
+    const isMap =
+      comment.text &&
+      typeof comment.text === 'object' &&
+      comment.text.text !== undefined &&
+      comment.text.authorName !== undefined &&
+      comment.text.createdAt !== undefined;
+
+    const authorName = isMap
+      ? comment.text.authorName || 'Unknown'
+      : comment.authorName || 'Unknown';
+
+    const text = isMap
+      ? comment.text.text
+      : typeof comment.text === 'string'
+        ? comment.text
+        : '';
+
+    const createdAt = isMap
+      ? comment.text.createdAt
+      : comment.createdAt;
+
+    return (
+      <View key={comment.id} style={styles.commentContainer}>
+        <Text style={styles.commentAuthor}>
+          {authorName}:
+        </Text>
+        <Text style={styles.commentText}>
+          {text}
+        </Text>
+        <Text style={styles.commentTimestamp}>
+          {createdAt ? new Date(createdAt).toLocaleString() : ''}
+        </Text>
+      </View>
+    );
+  })}
+</View>
+        </View>
+      ) : (
+        <Text style={styles.noComments}>No comments yet.</Text>
+      )}
+      <View style={styles.commentBox}>
+        <TextInput
+          placeholder="Add a comment..."
+          value={commentValue}
+          onChangeText={onCommentChange}
+          style={styles.commentInput}
+        />
+        <TouchableOpacity onPress={onCommentSend}>
+          <Ionicons name="send" size={22} color="#007BFF" />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
   
-  const [modalVisible, setModalVisible] = useState(false);
-  const [postTitle, setPostTitle] = useState('');
-  const [postContent, setPostContent] = useState('');
-  const [postCategory, setPostCategory] = useState('general');
-  const [posting, setPosting] = useState(false);
+}
 
-  const fetchProfileAndPosts = useCallback(async () => {
-    setLoading(true);
-    setError('');
+export default function BarberBulletinScreen() {
+  const router = useRouter();
+  const [posts, setPosts] = useState([]);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [category, setCategory] = useState('general');
+  const [loading, setLoading] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [commentInputs, setCommentInputs] = useState({});
+
+  const categories = ['general', 'question', 'event', 'tip', 'job'];
+
+  const fetchPosts = useCallback(async () => {
     try {
+      setLoading(true);
       const user = auth.currentUser;
       if (!user) {
         router.replace('/(auth)/login');
-        setLoading(false);
         return;
       }
-      const userProfile = await getUserProfile(user.uid);
-      setProfile(userProfile);
-
-      const postsData = await getBulletinPosts();
-      postsData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setPosts(postsData);
-
+      const profileData = await getUserProfile(user.uid);
+      const postData = await getBulletinPosts();
+      postData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setProfile(profileData);
+      setPosts(postData);
     } catch (err) {
-      console.error('Error fetching data:', err);
-      setError('Failed to load bulletin board data. Please try again.');
+      console.error(err);
+      Alert.alert('Error', 'Failed to fetch bulletin posts.');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, [router]);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchProfileAndPosts();
-    }, [fetchProfileAndPosts])
-  );
+  useFocusEffect(useCallback(() => {
+    fetchPosts();
+  }, [fetchPosts]));
 
-  const handleRefresh = () => {
-    setRefreshing(true);
-    fetchProfileAndPosts();
-  };
-
-  const handleCreatePost = async () => {
-    if (!postTitle.trim() || !postContent.trim()) {
-      Alert.alert('Validation Error', 'Please enter both title and content for your post.');
+  const handlePost = async () => {
+    if (!title.trim() || !content.trim()) {
+      Alert.alert('Missing Info', 'Please enter both a title and content.');
       return;
-    }
-    if (!profile || !profile.name) {
-        Alert.alert('Error', 'User profile not loaded. Cannot create post.');
-        return;
     }
 
     try {
       setPosting(true);
       const user = auth.currentUser;
-      if (!user) {
-        Alert.alert('Authentication Error', 'You must be logged in to create a post.');
-        setPosting(false);
-        router.replace('/(auth)/login');
-        return;
-      }
-      
-      const postData = {
-        title: postTitle,
-        content: postContent,
-        category: postCategory,
+      await createBulletinPost({
+        title,
+        content,
+        category,
         authorId: user.uid,
-        authorName: profile.name, // Ensure profile and profile.name are available
+        authorName: profile?.name || 'Unknown',
         createdAt: new Date().toISOString(),
-        comments: [], // Initialize with empty comments array
-      };
-      
-      await createBulletinPost(postData);
-      
-      setPostTitle('');
-      setPostContent('');
-      setPostCategory('general');
+      });
+      setTitle('');
+      setContent('');
+      setCategory('general');
       setModalVisible(false);
-      fetchProfileAndPosts(); // Refresh posts
-      Alert.alert('Success', 'Your post has been published!');
+      fetchPosts();
     } catch (err) {
-      console.error('Error creating post:', err);
-      Alert.alert('Post Creation Failed', err.message || 'An error occurred while creating the post.');
+      console.error(err);
+      Alert.alert('Error', 'Failed to post.');
     } finally {
       setPosting(false);
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const options = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+  const handleComment = async (postId) => {
+    const text = commentInputs[postId]?.trim();
+    if (!text) return;
+
     try {
-        return new Date(dateString).toLocaleDateString(undefined, options);
-    } catch (e) {
-        return 'Invalid Date';
+      const user = auth.currentUser;
+      const userProfile = await getUserProfile(user.uid);
+      await addCommentToPost(postId, {
+        text,
+        authorId: user.uid,
+        authorName: userProfile?.name || 'Unknown',
+        createdAt: new Date().toISOString(),
+      });
+      setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
+      fetchPosts();
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to post comment.');
     }
   };
 
-  const getCategoryIcon = (category) => {
-    switch (category?.toLowerCase()) {
-      case 'general': return 'information-circle-outline';
-      case 'question': return 'help-circle-outline';
-      case 'event': return 'calendar-outline';
-      case 'tip': return 'bulb-outline';
-      case 'job': return 'briefcase-outline';
-      default: return 'chatbox-ellipses-outline';
-    }
-  };
-
-  const renderPostItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.postCard}
-      onPress={() => router.push({
-        pathname: '/(app)/(barber)/bulletin-post-details',
-        params: { postId: item.id }
-      })}
-    >
-      <View style={styles.postHeader}>
-        <View style={styles.categoryBadge}>
-          <Ionicons name={getCategoryIcon(item.category)} size={16} color="#fff" />
-          <Text style={styles.categoryText}>
-            {item.category ? item.category.charAt(0).toUpperCase() + item.category.slice(1) : 'General'}
-          </Text>
-        </View>
-        <Text style={styles.postDate}>{formatDate(item.createdAt)}</Text>
-      </View>
-      <Text style={styles.postTitle}>{item.title}</Text>
-      <Text style={styles.postContent} numberOfLines={3}>{item.content}</Text>
-      <View style={styles.postFooter}>
-        <Text style={styles.authorName}>Posted by {item.authorName || 'Unknown'}</Text>
-        <View style={styles.commentsIndicator}>
-          <Ionicons name="chatbubble-outline" size={16} color="#666" />
-          <Text style={styles.commentsCount}>{item.comments?.length || 0}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+  const renderPost = ({ item }) => (
+    <BulletinPost
+      item={item}
+      commentValue={commentInputs[item.id] || ''}
+      onCommentChange={(text) => setCommentInputs((prev) => ({ ...prev, [item.id]: text }))}
+      onCommentSend={() => handleComment(item.id)}
+    />
   );
-
-  if (loading && !refreshing) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#2196F3" />
-        <Text style={styles.loadingText}>Loading bulletin board...</Text>
-      </View>
-    );
-  }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Barber Bulletin Board</Text>
-        <Text style={styles.subtitle}>Connect, share tips, and stay informed.</Text>
-      </View>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    >
+      <View style={styles.container}>
+        <FlatList
+          data={posts}
+          keyExtractor={(item) => item.id}
+          renderItem={renderPost}
+          contentContainerStyle={styles.list}
+          ListEmptyComponent={<Text style={styles.empty}>No posts yet</Text>}
+        />
 
-      {error ? (
-          <View style={styles.centeredError}>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
-                <Text style={styles.retryButtonText}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-      ) : null}
+        <TouchableOpacity style={styles.fab} onPress={() => setModalVisible(true)}>
+          <Ionicons name="add" size={28} color="#fff" />
+        </TouchableOpacity>
 
-      <FlatList
-        data={posts}
-        renderItem={renderPostItem}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContainer}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        ListEmptyComponent={
-          !loading && (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="newspaper-outline" size={64} color="#ccc" />
-              <Text style={styles.emptyText}>No posts yet.</Text>
-              <Text style={styles.emptySubtext}>Be the first to share something!</Text>
-            </View>
-          )
-        }
-      />
-      
-      <TouchableOpacity 
-        style={styles.floatingButton}
-        onPress={() => setModalVisible(true)}
-      >
-        <Ionicons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
-      
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Create New Bulletin Post</Text>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Category</Text>
-              <View style={styles.categoryOptions}>
-                {['general', 'question', 'event', 'tip', 'job'].map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[styles.categoryOption, postCategory === cat && styles.selectedCategoryOption]}
-                    onPress={() => setPostCategory(cat)}
-                  >
-                    <Ionicons name={getCategoryIcon(cat)} size={16} color={postCategory === cat ? '#fff' : '#2196F3'} />
-                    <Text style={[styles.categoryOptionText, postCategory === cat && styles.selectedCategoryOptionText]}>
-                      {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Title</Text>
-              <TextInput
-                style={styles.input}
-                value={postTitle}
-                onChangeText={setPostTitle}
-                placeholder="Enter post title"
-                placeholderTextColor="#999"
-              />
-            </View>
-            <View style={styles.inputContainer}>
-              <Text style={styles.inputLabel}>Content</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={postContent}
-                onChangeText={setPostContent}
-                placeholder="Share your thoughts..."
-                placeholderTextColor="#999"
-                multiline
-                numberOfLines={5}
-              />
-            </View>
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setModalVisible(false)}>
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.postButton, posting && styles.disabledButton]}
-                onPress={handleCreatePost}
-                disabled={posting}
+        <Modal visible={modalVisible} transparent animationType="fade">
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={styles.modalOverlay}>
+              <KeyboardAvoidingView
+                style={styles.modalContainer}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
               >
-                {posting ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.postButtonText}>Post</Text>}
-              </TouchableOpacity>
+                <View style={styles.modal}>
+                  <Text style={styles.modalTitle}>Create Bulletin Post</Text>
+
+                  <TextInput
+                    placeholder="Title"
+                    style={styles.input}
+                    value={title}
+                    onChangeText={setTitle}
+                  />
+                  <TextInput
+                    placeholder="Content"
+                    style={[styles.input, { height: 100 }]}
+                    value={content}
+                    onChangeText={setContent}
+                    multiline
+                  />
+
+                  <View style={styles.categoryRow}>
+                    {categories.map((cat) => (
+                      <TouchableOpacity
+                        key={cat}
+                        style={[
+                          styles.category,
+                          category === cat && styles.categorySelected,
+                        ]}
+                        onPress={() => setCategory(cat)}
+                      >
+                        <Text
+                          style={[
+                            styles.categoryText,
+                            category === cat && styles.categoryTextSelected,
+                          ]}
+                        >
+                          {cat}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity onPress={() => setModalVisible(false)}>
+                      <Text style={styles.cancel}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.postButton}
+                      onPress={handlePost}
+                      disabled={posting}
+                    >
+                      <Text style={styles.postButtonText}>
+                        {posting ? 'Posting...' : 'Post'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </KeyboardAvoidingView>
             </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+          </TouchableWithoutFeedback>
+        </Modal>
+      </View>
+    </KeyboardAvoidingView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f0f2f5',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#f0f2f5',
-  },
-  centeredError: {
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
-  header: {
-    padding: 20,
-    paddingTop: 30, // More space at top
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    alignItems: 'center', // Center header content
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#555',
-    textAlign: 'center',
-  },
-  errorText: {
-    color: '#f44336',
-    padding: 16,
-    textAlign: 'center',
-    fontSize: 15,
-  },
-  retryButton: {
-    marginTop: 10,
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+  container: { flex: 1, backgroundColor: '#fff' },
+  list: { padding: 16 },
+  empty: { textAlign: 'center', color: '#888', marginTop: 20 },
+  postCard: {
+    backgroundColor: '#f9f9f9',
+    padding: 14,
+    marginBottom: 16,
     borderRadius: 8,
   },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
+  postScroll: {
+    maxHeight: 100,
+    marginBottom: 8,
   },
-  listContainer: {
-    padding: 12,
-    paddingBottom: 80, // For floating button
-  },
-  emptyContainer: {
-    flex: 1, // Make it take available space if list is short
+  postTitle: { fontWeight: 'bold', fontSize: 16, marginBottom: 4 },
+  postMeta: { fontSize: 12, color: '#666', marginBottom: 4 },
+  postContent: { fontSize: 14, color: '#333' },
+  loadingText: { fontSize: 12, color: '#888' },
+  noComments: { fontSize: 12, color: '#888' },
+  commentSection: { marginTop: 8, marginBottom: 4 },
+  commentText: { fontSize: 13, color: '#444', marginBottom: 2 },
+  commentTimestamp: { fontSize: 11, color: '#888' },
+  commentBox: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50, // More padding
-  },
-  emptyText: {
-    fontSize: 18,
-    color: '#666',
-    marginTop: 16,
-    fontWeight: '500',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
     marginTop: 8,
-    textAlign: 'center',
-  },
-  postCard: {
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  postHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  categoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 15,
-  },
-  categoryText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: 'bold',
-    marginLeft: 5,
-    textTransform: 'capitalize',
-  },
-  postDate: {
-    fontSize: 11,
-    color: '#777',
-  },
-  postTitle: {
-    fontSize: 17,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 6,
-  },
-  postContent: {
-    fontSize: 14,
-    color: '#555',
-    lineHeight: 20,
-    marginBottom: 10,
-  },
-  postFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 10,
-    marginTop: 5,
+    borderTopColor: '#eee',
+    paddingTop: 8,
   },
-  authorName: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
+  commentInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    marginRight: 8,
   },
-  commentsIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  commentsCount: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-  },
-  floatingButton: {
+  fab: {
     position: 'absolute',
-    bottom: 25,
-    right: 25,
+    right: 20,
+    bottom: 30,
+    backgroundColor: '#007BFF',
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#2196F3',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    elevation: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#00000088',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
   modalContainer: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
   },
-  modalContent: {
-    width: '90%',
-    maxWidth: 400,
+  modal: {
     backgroundColor: '#fff',
     borderRadius: 10,
     padding: 20,
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 12,
     textAlign: 'center',
-    color: '#333',
-  },
-  inputContainer: {
-    marginBottom: 15,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 6,
-    color: '#444',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
+    padding: 10,
     borderRadius: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    backgroundColor: '#f9f9f9',
+    marginBottom: 10,
+    backgroundColor: '#f5f5f5',
   },
-  textArea: {
-    minHeight: 100, // Adjusted height
-    textAlignVertical: 'top',
-  },
-  categoryOptions: {
+  categoryRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    marginBottom: 5, // Add some bottom margin
+    marginBottom: 10,
   },
-  categoryOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  category: {
     backgroundColor: '#e0e0e0',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 20,
     marginRight: 8,
     marginBottom: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
   },
-  selectedCategoryOption: {
-    backgroundColor: '#2196F3',
-    borderColor: '#1976D2',
+  categorySelected: {
+    backgroundColor: '#007BFF',
   },
-  categoryOptionText: {
+  categoryText: {
     fontSize: 13,
     color: '#333',
-    marginLeft: 5,
-    fontWeight: '500',
   },
-  selectedCategoryOptionText: {
+  categoryTextSelected: {
     color: '#fff',
   },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: 12,
   },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#e0e0e0',
-    marginRight: 8,
-  },
-  cancelButtonText: {
-    color: '#333',
-    fontWeight: 'bold',
-    fontSize: 15,
+  cancel: {
+    fontSize: 16,
+    color: '#007BFF',
+    padding: 10,
   },
   postButton: {
-    backgroundColor: '#2196F3',
-    marginLeft: 8,
+    backgroundColor: '#007BFF',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 6,
   },
   postButtonText: {
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: 15,
   },
-  disabledButton: {
-    backgroundColor: '#cccccc',
+  commentContainer: {
+  marginBottom: 6,
+  backgroundColor: '#f1f1f1',
+  padding: 8,
+  borderRadius: 6,
+},
+commentAuthor: {
+  fontWeight: 'bold',
+  marginBottom: 2,
+},
+commentText: {
+  color: '#333',
+},
+commentTimestamp: {
+  fontSize: 10,
+  color: '#888',
+  marginTop: 2,
+},
+  postCard: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+    elevation: 2,
   },
 });
-
-export default BarberBulletinScreen;
-

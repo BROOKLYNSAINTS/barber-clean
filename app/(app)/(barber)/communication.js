@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import theme from '@/styles/theme'; // Adjusted path
 import { ScreenContainer, ScreenHeader } from '@/components/LayoutComponents'; // Adjusted path
 import { Button, Card } from '@/components/UIComponents'; // Adjusted path
-
+import { getUserProfile, auth, getBulletinPosts, createBulletinPost } from '@/services/firebase'; // Adjusted path
 const BarberCommunicationScreen = () => {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('bulletin');
