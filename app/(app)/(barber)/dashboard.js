@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-//import { getBarberAppointments, getUserProfile, auth } from '@/services/firebase'; // Adjusted path
-import { getBarberAppointments, getUserProfile } from '@/services/firebase'; // Adjusted path
-
+import { getBarberAppointments, getUserProfile, auth } from '@/services/firebase'; // Adjusted path
 import { useRouter, useFocusEffect } from 'expo-router';
+import { createDummyAppointments } from "@/utils/test";
 
 const BarberDashboardScreen = () => {
   const router = useRouter();
@@ -21,6 +20,10 @@ const BarberDashboardScreen = () => {
       setError('');
       
       const user = auth.currentUser;
+      console.log('🔍 Fetching user profile for UID:', user?.uid);
+      console.log("auth:", auth);
+      console.log("currentUser:", auth?.currentUser);
+
       if (!user) {
         setError('User not authenticated.');
         router.replace('/(auth)/login');
@@ -39,29 +42,27 @@ const BarberDashboardScreen = () => {
         return;
       }
 
-      const appointmentsData = await getBarberAppointments(user.uid);
-      
+      const appointmentsData = await getBarberAppointments(user.uid) || [];
+
       appointmentsData.sort((a, b) => {
         const dateA = new Date(`${a.date}T${a.time}`);
         const dateB = new Date(`${b.date}T${b.time}`);
         return dateA - dateB;
       });
-      
+
       setAppointments(appointmentsData);
-      
+
+      // Get today's date in YYYY-MM-DD format
       const today = new Date().toISOString().split('T')[0];
+
       const todayAppts = appointmentsData.filter(appt => appt.date === today);
       setTodayAppointments(todayAppts);
-      
-      const upcoming = appointmentsData.filter(appt => {
-        const apptDate = new Date(`${appt.date}T${appt.time}`);
-        const now = new Date();
-        // Ensure we are comparing date objects correctly
-        const appointmentDateTime = new Date(appt.date + 'T' + appt.time);
-        const todayStart = new Date();
-        todayStart.setHours(0,0,0,0);
 
-        return appointmentDateTime >= todayStart && appt.date !== today; 
+      const upcoming = appointmentsData.filter(appt => {
+        const appointmentDateTime = new Date(`${appt.date}T${appt.time}`);
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        return appointmentDateTime >= todayStart && appt.date !== today;
       });
       setUpcomingAppointments(upcoming.slice(0, 5));
       
@@ -80,9 +81,17 @@ const BarberDashboardScreen = () => {
   );
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return 'N/A';
     const options = { weekday: 'short', month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    // Parse as local date to avoid UTC shift bug
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (
+      isNaN(year) ||
+      isNaN(month) ||
+      isNaN(day)
+    ) return 'N/A';
+    const dateObj = new Date(year, month - 1, day);
+    return dateObj.toLocaleDateString(undefined, options);
   };
 
   const renderAppointmentItem = ({ item }) => (
@@ -170,6 +179,13 @@ const BarberDashboardScreen = () => {
         </View>
       </View>
 
+      {/* Show a special message if the barber has no appointments at all */}
+      {appointments.length === 0 && !loading && !error && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>You have no appointments yet. Share your booking link or set up your services to get started!</Text>
+        </View>
+      )}
+
       <FlatList
         data={null} // To render sections in ListHeaderComponent and ListFooterComponent
         ListHeaderComponent={
@@ -223,22 +239,52 @@ const BarberDashboardScreen = () => {
         }
         ListFooterComponentStyle={{paddingBottom: 20}}
         ListFooterComponent={
-          <View style={styles.actionButtonsContainer}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => router.push('/(app)/(barber)/manage-services')}
-            >
-              <Ionicons name="list-outline" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Manage Services</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={() => router.push('/(app)/(barber)/availability')}
-            >
-              <Ionicons name="calendar-outline" size={24} color="#fff" />
-              <Text style={styles.actionButtonText}>Set Availability</Text>
-            </TouchableOpacity>
-          </View>
+          <>
+            <View style={styles.actionButtonsContainer}>
+              <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={() => router.push('/(app)/(barber)/manage-services')}
+              >
+                <Ionicons name="list-outline" size={24} color="#fff" />
+                <Text style={styles.actionButtonText}>Manage Services</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={() => router.push('/(app)/(barber)/availability')}
+              >
+                <Ionicons name="calendar-outline" size={24} color="#fff" />
+                <Text style={styles.actionButtonText}>Set Availability</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 20 }}>
+              <TouchableOpacity
+                onPress={async () => {
+                  const uid = auth.currentUser?.uid;
+                  if (!uid) return;
+                  try {
+                    await createDummyAppointments(uid);
+                  } catch (err) {
+                    console.error('❌ Failed to add appointments:', err);
+                  }
+                }}
+                style={{
+                  backgroundColor: '#4CAF50',
+                  paddingVertical: 12,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 3,
+                  elevation: 3,
+                }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>
+                  Create Dummy Appointments
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </>
         }
       />
     </View>

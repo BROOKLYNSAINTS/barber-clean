@@ -1,22 +1,27 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
 import theme from '../styles/theme';
+import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 
-// Basic UI components
-export const Button = ({ title, onPress, style, icon, disabled }) => {
+export const Button = ({ title, onPress, style, icon, disabled, textStyle, small }) => {
   return (
-    <View style={[styles.button, disabled && styles.buttonDisabled, style]}>
-      <Text style={styles.buttonText}>{title}</Text>
-    </View>
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.button, disabled && styles.buttonDisabled, style]}
+      disabled={disabled}
+      activeOpacity={0.8}
+    >
+      {icon &&
+        (typeof icon === 'string' || typeof icon === 'number' ? (
+          <Text style={{ marginRight: 6 }}>{icon}</Text>
+        ) : (
+          <View style={{ marginRight: 6 }}>{icon}</View>
+        ))
+      }
+      <Text style={[styles.buttonText, textStyle]}>{title}</Text>
+    </TouchableOpacity>
   );
 };
-
 export const Card = ({ children, style }) => {
-  return (
-    <View style={[styles.card, style]}>
-      {children}
-    </View>
-  );
+  return <View style={[styles.card, style]}>{children}</View>;
 };
 
 export const EmptyState = ({ icon, title, message, actionButton }) => {

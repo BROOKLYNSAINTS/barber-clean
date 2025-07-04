@@ -35,7 +35,7 @@ export default function BarberServicesScreen() {
       setLoading(false);
       return;
     }
-
+    console.log("🔍 Fetching services for barber ID:", parsedBarber.id, parsedBarber.name);
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -43,9 +43,11 @@ export default function BarberServicesScreen() {
 
         const servicesData = await getBarberServices(parsedBarber.id);
         setServices(servicesData);
+        console.log("📦 Services Data for Barber ID", parsedBarber.id, ":", servicesData);
 
         const reviewsData = await getBarberReviews(parsedBarber.id);
         setReviews(reviewsData);
+        console.log("🗒️ Reviews Data for Barber ID", parsedBarber.id, ":", reviewsData);
 
         setBarber({
           ...parsedBarber,
@@ -61,13 +63,13 @@ export default function BarberServicesScreen() {
 
     fetchData();
   }, []);
-  const handleSelectService = (service) => {
+  const handleSelectService = (services) => {
    // if (!currentUser) return;
     router.push({
       pathname: '/(app)/(customer)/appointment-booking',
       params: {
         barber: JSON.stringify(barber),
-        service: JSON.stringify(service),
+        service: JSON.stringify(services),
       },
     });
   };
@@ -75,7 +77,7 @@ export default function BarberServicesScreen() {
   const renderServiceItem = ({ item }) => (
     <TouchableOpacity style={styles.serviceCard} onPress={() => handleSelectService(item)}>
       <View style={styles.serviceInfo}>
-        <Text style={styles.serviceName}>{item.style}</Text>
+        <Text style={styles.serviceName}>{item.name}</Text>
         {item.photo && <Image source={{ uri: item.photo }} style={styles.servicePhoto} />}
         <Text style={styles.serviceDescription}>{item.description}</Text>
       </View>

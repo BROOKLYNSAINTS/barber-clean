@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useAuth } from '../../../src/contexts/AuthContext';
-import { getFirestore, collection, getDocs, doc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { getFirestore, collection, doc, updateDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
 import { app } from '../../../src/services/firebase';
 import moment from 'moment';
 import * as Notifications from 'expo-notifications';
@@ -38,34 +38,27 @@ export default function NotificationScreen() {
   }, []);
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      if (!currentUser?.uid) return;
+    if (!currentUser?.uid) return;
 
-      try {
-        const q = query(
-          collection(db, 'users', currentUser.uid, 'notifications'),
-          orderBy('timestamp', 'desc')
-        );
-        const snapshot = await getDocs(q);
-        const list = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setNotifications(list);
-        console.log('📬 Notifications fetched:', list.map(n => ({
+    const q = query(
+      collection(db, 'users', currentUser.uid, 'notifications'),
+      orderBy('timestamp', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+      setNotifications(list);
+      console.log('📬 Notifications updated:', list.map(n => ({
         id: n.id,
         title: n.title,
         timestamp: n.timestamp?.toDate?.()
-})));
+      })));
+    });
 
-      } catch (error) {
-        console.error('Error fetching notifications:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchNotifications();
+    return () => unsubscribe();
   }, [currentUser]);
 
   const markAsRead = async (id) => {

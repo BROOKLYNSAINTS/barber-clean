@@ -48,7 +48,16 @@ const AppointmentsScreen = () => {
 
   const formatDate = (dateString) => {
     const options = { weekday: 'short', month: 'short', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return 'N/A';
+    // Parse as local date to avoid UTC shift bug
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (
+      isNaN(year) ||
+      isNaN(month) ||
+      isNaN(day)
+    ) return 'N/A';
+    const dateObj = new Date(year, month - 1, day);
+    return dateObj.toLocaleDateString(undefined, options);
   };
 
   const isUpcoming = (appointment) => {

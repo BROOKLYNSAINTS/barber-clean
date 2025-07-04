@@ -42,6 +42,7 @@ export default function SelectBarberScreen() {
 
   const handleBarberSelect = (barber) => {
     console.log('Selected Barber:', barber);
+    // Navigate to the barber's services page with the selected barber's data
   router.push({
   pathname: '/(app)/(customer)/barber-services',
   params: { barber: JSON.stringify(barber) }, // or whatever the correct variable is

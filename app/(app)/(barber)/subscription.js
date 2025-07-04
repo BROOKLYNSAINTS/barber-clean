@@ -174,9 +174,13 @@ const BarberSubscriptionScreen = () => {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return "N/A";
+    if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return "N/A";
     try {
-      return new Date(dateString).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+      // Parse as local date to avoid UTC shift bug
+      const [year, month, day] = dateString.split('-').map(Number);
+      if (isNaN(year) || isNaN(month) || isNaN(day)) return "Invalid Date";
+      const dateObj = new Date(year, month - 1, day);
+      return dateObj.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
     } catch (e) {
       return "Invalid Date";
     }

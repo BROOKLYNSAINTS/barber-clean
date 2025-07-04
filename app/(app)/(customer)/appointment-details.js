@@ -15,11 +15,26 @@ import { addAppointmentToCalendar, scheduleAppointmentReminder } from '@/service
 
 const AppointmentDetailsScreen = () => {
   const router = useRouter();
-  const params = useLocalSearchParams();
+  // Safe JSON parsing utility
+  const safeParse = (input) => {
+    if (!input) return null;
+    try {
+      return typeof input === 'string' ? JSON.parse(input) : input;
+    } catch (err) {
+      return null;
+    }
+  };
 
-  const [appointment, setAppointment] = useState(null);
-  const [barber, setBarber] = useState(null);
-  const [service, setService] = useState(null);
+  // Use safeParse for params
+  const params = useLocalSearchParams();
+  const appointment = safeParse(params.appointment);
+  const barber = safeParse(params.barber);
+  const service = safeParse(params.service);
+
+  console.log('DEBUG parsed appointment:', appointment);
+  console.log('DEBUG parsed time:', appointment?.time);
+  console.log('DEBUG to24Hour:', to24Hour(appointment?.time));
+
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
@@ -27,48 +42,45 @@ const AppointmentDetailsScreen = () => {
   const [calendarAdded, setCalendarAdded] = useState(false);
   const [reminderSet, setReminderSet] = useState(false);
 
-useEffect(() => {
-  try {
-    const parsedAppointment = params.appointment ? JSON.parse(params.appointment) : null;
-    const parsedBarber = params.barber ? JSON.parse(params.barber) : null;
-    const parsedService = params.service ? JSON.parse(params.service) : null;
-
-    if (!parsedAppointment || !parsedBarber || !parsedService) {
-      setError('Appointment, barber, or service data not found.');
-      setLoading(false);
-      return;
-    }
-
-    setAppointment(parsedAppointment);
-    setBarber(parsedBarber);
-    setService(parsedService);
-
-    const fetchProfile = async () => {
-      try {
-        const user = auth.currentUser;
-        if (user) {
-          const userProfile = await getUserProfile(user.uid);
-          setProfile(userProfile);
-        }
-      } catch (err) {
-        console.error('Error loading profile:', err);
-      } finally {
+  useEffect(() => {
+    try {
+      if (!appointment || !barber || !service) {
+        setError('Appointment, barber, or service data not found.');
         setLoading(false);
+        return;
       }
-    };
 
-    fetchProfile();
-  } catch (err) {
-    console.error('Parsing error:', err);
-    setError('Invalid data format.');
-    setLoading(false);
-  }
-  // ✅ Empty dependency array so this runs only once
-}, []);
+      const fetchProfile = async () => {
+        try {
+          const user = auth.currentUser;
+          if (user) {
+            const userProfile = await getUserProfile(user.uid);
+            setProfile(userProfile);
+          }
+        } catch (err) {
+          console.error('Error loading profile:', err);
+        } finally {
+          setLoading(false);
+        }
+      };
 
+      fetchProfile();
+    } catch (err) {
+      console.error('Error:', err);
+      setError('Invalid data format.');
+      setLoading(false);
+    }
+    // ✅ Empty dependency array so this runs only once
+  }, []);
+
+  // Fix the date shift bug by parsing as local date
   const formatDate = (dateString) => {
     const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    return new Date(dateString).toLocaleDateString(undefined, options);
+    if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return '';
+    const [year, month, day] = dateString.split('-').map(Number);
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return '';
+    const dateObj = new Date(year, month - 1, day);
+    return dateObj.toLocaleDateString(undefined, options);
   };
 
   const handleAddToCalendar = async () => {
@@ -117,6 +129,35 @@ useEffect(() => {
         },
       ]
     );
+  };
+
+  const scheduleReminder = async () => {
+    if (!appointment || !barber || !service) return;
+    try {
+      // Debug logs for date/time conversion
+      console.log('DEBUG appointment.date:', appointment.date);
+      console.log('DEBUG appointment.time:', appointment.time);
+      console.log('DEBUG to24Hour(appointment.time):', to24Hour(appointment.time));
+
+      let appointmentDate;
+      try {
+        appointmentDate = getAppointmentDate(appointment.date, appointment.time);
+        console.log('DEBUG getAppointmentDate result:', appointmentDate);
+      } catch (err) {
+        console.error('DEBUG getAppointmentDate error:', err);
+        Alert.alert('Error', 'Invalid date or time format.');
+        return;
+      }
+      setProcessing(true);
+      await scheduleAppointmentReminder(appointment);
+      setReminderSet(true);
+      Alert.alert('Success', 'Reminder set.');
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Could not set reminder.');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   if (loading) {
@@ -203,6 +244,56 @@ useEffect(() => {
     </ScrollView>
   );
 };
+
+function to24Hour(timeStr) {
+  // Replace all unicode and normal spaces with a single space, then trim
+  if (!timeStr) return '';
+  timeStr = String(timeStr).replace(/[\u202F\u00A0\u2009\u2007\u200A\u200B\u200C\u200D\uFEFF\s]+/g, ' ').trim();
+  const parts = timeStr.split(' ');
+  const time = parts[0];
+  const modifier = parts[1] ? parts[1].toUpperCase() : '';
+  if (!time) return '';
+  let [hours, minutes] = time.split(':');
+  hours = hours.padStart(2, '0'); // Ensure two digits
+  if (modifier === 'PM' && hours !== '12') {
+    hours = String(parseInt(hours, 10) + 12).padStart(2, '0');
+  }
+  if (modifier === 'AM' && hours === '12') {
+    hours = '00';
+  }
+  return `${hours}:${minutes ? minutes.padStart(2, '0') : '00'}`;
+}
+
+function getAppointmentDate(dateStr, timeStr) {
+  // Defensive: sanitize time string
+  let time24 = to24Hour(timeStr);
+  if (/^\d{2}:\d{2}$/.test(time24)) {
+    time24 += ':00';
+  }
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  const timeRegex = /^\d{2}:\d{2}(:\d{2})?$/;
+  if (!dateRegex.test(dateStr) || !timeRegex.test(time24)) {
+    console.error('Invalid date or time format', { dateStr, timeStr, time24 });
+    throw new Error('Invalid date or time format');
+  }
+  // Split date and time into parts
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const [hours, minutes, seconds] = time24.split(':').map(Number);
+  if (
+    isNaN(year) || isNaN(month) || isNaN(day) ||
+    isNaN(hours) || isNaN(minutes) || (seconds !== undefined && isNaN(seconds))
+  ) {
+    console.error('Date or time contains NaN', { year, month, day, hours, minutes, seconds });
+    throw new RangeError('Date value out of bounds');
+  }
+  // JS Date: months are 0-based
+  const dateObj = new Date(year, month - 1, day, hours, minutes, seconds || 0);
+  if (isNaN(dateObj.getTime())) {
+    console.error('Constructed date is invalid', { year, month, day, hours, minutes, seconds });
+    throw new RangeError('Date value out of bounds');
+  }
+  return dateObj;
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },

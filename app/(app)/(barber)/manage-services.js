@@ -11,8 +11,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-//import { getBarberServices, addBarberService, auth } from '@/services/firebase';
-import { getBarberServices, addBarberService } from '@/services/firebase';
+import { getBarberServices, addBarberService, auth } from '@/services/firebase';
 
 
 export default function Screen() {
