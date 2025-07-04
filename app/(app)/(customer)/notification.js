@@ -11,6 +11,7 @@ import { useAuth } from '../../../src/contexts/AuthContext';
 import { getFirestore, collection, getDocs, doc, updateDoc, query, orderBy } from 'firebase/firestore';
 import { app } from '../../../src/services/firebase';
 import moment from 'moment';
+import * as Notifications from 'expo-notifications';
 
 const db = getFirestore(app);
 
@@ -18,6 +19,23 @@ export default function NotificationScreen() {
   const { currentUser } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Listen for local notifications
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener((notification) => {
+      setNotifications(prev => [
+        {
+          id: notification.request.identifier || String(Date.now()),
+          title: notification.request.content.title,
+          body: notification.request.content.body,
+          timestamp: new Date(),
+          read: false,
+        },
+        ...prev,
+      ]);
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     const fetchNotifications = async () => {
