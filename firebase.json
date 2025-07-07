@@ -6,6 +6,10 @@
   
   "ios": {
     "bundleIdentifier": "com.ScheduleSync.barber"
+  },
+  
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }
 

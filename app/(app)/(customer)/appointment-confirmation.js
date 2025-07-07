@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Calendar from 'expo-calendar';
 import * as Notifications from 'expo-notifications';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useAuth } from '../../../src/contexts/AuthContext';
+import { scheduleAppointmentReminder, scheduleTestReminder } from '../../../src/services/notifications';
 import DebugUser from '@/components/DebugUser';
 
 // ✅ Safe JSON parsing
@@ -66,6 +68,7 @@ Notifications.setNotificationHandler({
 export default function AppointmentConfirmationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { currentUser } = useAuth();
 
   const appointment = safeParse(params.appointment);
   const barber = safeParse(params.barber);
@@ -73,7 +76,32 @@ export default function AppointmentConfirmationScreen() {
 
   const [loading, setLoading] = useState(false);
   const [calendarAdded, setCalendarAdded] = useState(false);
-  const [reminderSet, setReminderSet] = useState(false);
+  const [autoRemindersSet, setAutoRemindersSet] = useState(false);
+
+  // Automatically set up reminders when component mounts
+  useEffect(() => {
+    const setupAutomaticReminders = async () => {
+      if (!appointment || !currentUser?.uid || autoRemindersSet) {
+        console.log('⚠️ Skipping reminder setup:', { 
+          hasAppointment: !!appointment, 
+          hasUser: !!currentUser?.uid, 
+          alreadySet: autoRemindersSet 
+        });
+        return;
+      }
+      
+      try {
+        console.log('🔔 Setting up automatic reminders...', { appointment, userId: currentUser.uid });
+        await scheduleAppointmentReminder(appointment, currentUser.uid);
+        setAutoRemindersSet(true);
+        console.log('✅ Automatic reminders set successfully');
+      } catch (error) {
+        console.error('❌ Error setting automatic reminders:', error);
+      }
+    };
+
+    setupAutomaticReminders();
+  }, [appointment, currentUser, autoRemindersSet]);
 
   const formatDate = (dateString) => {
     if (!dateString || typeof dateString !== 'string' || !dateString.includes('-')) return 'N/A';
@@ -143,66 +171,25 @@ export default function AppointmentConfirmationScreen() {
   };
 
   const scheduleReminder = async () => {
-    if (!appointment || !barber || !service) return;
+    // This function is now deprecated since we do automatic reminders
+    // Keeping for reference but not using
+    Alert.alert(
+      'Info', 
+      'Reminders are automatically set when you book an appointment. Check your notification screen to see them!'
+    );
+  };
+
+  const testReminder = async () => {
     try {
-      // Debug logs for date/time conversion
-      console.log('DEBUG appointment.date:', appointment.date);
-      console.log('DEBUG appointment.time:', appointment.time);
-      console.log('DEBUG to24Hour(appointment.time):', to24Hour(appointment.time));
-
-      let appointmentDate;
-      try {
-        appointmentDate = getAppointmentDate(appointment.date, appointment.time);
-        console.log('DEBUG getAppointmentDate result:', appointmentDate);
-      } catch (err) {
-        console.error('DEBUG getAppointmentDate error:', err);
-        Alert.alert('Error', 'Invalid date or time format.');
-        return;
-      }
-
-      setLoading(true);
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Notification permission is required.');
-        setLoading(false);
-        return;
-      }
-
-      const triggerDate = new Date(appointmentDate);
-      triggerDate.setDate(triggerDate.getDate() - 1);
-      triggerDate.setHours(9, 0, 0);
-
-      const secondsUntilTrigger = Math.floor((triggerDate.getTime() - Date.now()) / 1000);
-      console.log('DEBUG triggerDate:', triggerDate);
-      console.log('DEBUG secondsUntilTrigger:', secondsUntilTrigger);
-
-      if (secondsUntilTrigger <= 0) {
-        Alert.alert('Info', 'Appointment is too soon to schedule a reminder.');
-        setLoading(false);
-        return;
-      }
-
-      const content = {
-        title: 'Upcoming Haircut Appointment',
-        body: `Reminder: ${service.name} with ${barber.name} is tomorrow at ${appointment.time}`,
-        data: { appointmentId: appointment.id },
-      };
-
-      await Notifications.scheduleNotificationAsync({
-        content,
-        trigger: { seconds: secondsUntilTrigger, repeats: false },
-      });
-
-      setReminderSet(true);
+      console.log('🧪 Testing reminder in 10 seconds...');
+      await scheduleTestReminder(appointment, currentUser.uid, 10);
       Alert.alert(
-        'Success',
-        `Reminder scheduled for 9 AM the day before your appointment on ${appointment.date} at ${appointment.time}.`
+        'Test Reminder Scheduled', 
+        'A test reminder will appear in 10 seconds. Make sure your app is in the background to see the notification!'
       );
     } catch (error) {
-      console.error('❌ Error scheduling reminder:', error);
-      Alert.alert('Error', 'Failed to set reminder.');
-    } finally {
-      setLoading(false);
+      console.error('Error scheduling test reminder:', error);
+      Alert.alert('Error', 'Failed to schedule test reminder.');
     }
   };
   const handleDone = () => {
@@ -300,30 +287,29 @@ export default function AppointmentConfirmationScreen() {
           )}
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.actionButton, reminderSet && styles.disabledButtonGreen]}
-          onPress={scheduleReminder}
-          disabled={loading || reminderSet}
-        >
-          {loading && !reminderSet ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="notifications-outline" size={20} color="#fff" style={styles.actionIcon} />
-              <Text style={styles.actionButtonText}>
-                {reminderSet ? 'Reminder Set' : 'Set Reminder'}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+        <View style={[styles.actionButton, styles.disabledButtonGreen]}>
+          <Ionicons name="notifications" size={20} color="#fff" style={styles.actionIcon} />
+          <Text style={styles.actionButtonText}>
+            {autoRemindersSet ? 'Reminders Set' : 'Setting Reminders...'}
+          </Text>
+        </View>
       </View>
 
       <TouchableOpacity style={styles.doneButton} onPress={handleDone}>
         <Text style={styles.doneButtonText}>Done</Text>
       </TouchableOpacity>
 
+      {/* Test Button - Remove this in production */}
+      <TouchableOpacity 
+        style={[styles.doneButton, { backgroundColor: '#FF9800', marginTop: 8 }]} 
+        onPress={testReminder}
+      >
+        <Text style={styles.doneButtonText}>🧪 Test Reminder (10 seconds)</Text>
+      </TouchableOpacity>
+
       <Text style={styles.reminderInfoText}>
-        You can set a reminder for the day before your appointment.
+        Reminders are automatically set for 24 hours and 1 hour before your appointment. 
+        You can view them in the notifications tab.
       </Text>
 
       <View style={{ padding: 10, backgroundColor: '#ffe' }}>

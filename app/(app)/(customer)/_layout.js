@@ -17,13 +17,39 @@ export default function CustomerTabLayout() {
   useEffect(() => {
     if (!currentUser?.uid) return;
 
+    // Get all notifications and filter on client side
     const q = query(
-      collection(db, 'users', currentUser.uid, 'notifications'),
-      where('read', '==', false)
+      collection(db, 'users', currentUser.uid, 'notifications')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setUnreadCount(snapshot.size);
+      // Filter for unread AND not cancelled notifications
+      const activeUnreadNotifications = snapshot.docs.filter(doc => {
+        const data = doc.data();
+        const isUnread = data.read === false;
+        const isNotCancelled = data.status !== 'cancelled';
+        
+        // Debug log each notification
+        console.log('🔍 Notification debug:', {
+          id: doc.id,
+          title: data.title,
+          read: data.read,
+          status: data.status,
+          isUnread,
+          isNotCancelled,
+          shouldCount: isUnread && isNotCancelled
+        });
+        
+        return isUnread && isNotCancelled;
+      });
+      
+      setUnreadCount(activeUnreadNotifications.length);
+      console.log('📊 Notification badge count updated:', activeUnreadNotifications.length);
+      console.log('📊 Active unread notifications:', activeUnreadNotifications.map(doc => ({
+        id: doc.id,
+        title: doc.data().title,
+        status: doc.data().status
+      })));
     });
 
     return unsubscribe;

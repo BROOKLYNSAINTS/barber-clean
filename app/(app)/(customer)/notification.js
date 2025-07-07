@@ -20,21 +20,9 @@ export default function NotificationScreen() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Listen for local notifications
+  // Set loading to false when component mounts
   useEffect(() => {
-    const subscription = Notifications.addNotificationReceivedListener((notification) => {
-      setNotifications(prev => [
-        {
-          id: notification.request.identifier || String(Date.now()),
-          title: notification.request.content.title,
-          body: notification.request.content.body,
-          timestamp: new Date(),
-          read: false,
-        },
-        ...prev,
-      ]);
-    });
-    return () => subscription.remove();
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -50,8 +38,15 @@ export default function NotificationScreen() {
         id: doc.id,
         ...doc.data(),
       }));
-      setNotifications(list);
-      console.log('📬 Notifications updated:', list.map(n => ({
+      
+      // Filter out cancelled notifications
+      const activeNotifications = list.filter(notification => 
+        notification.status !== 'cancelled'
+      );
+      
+      setNotifications(activeNotifications);
+      setLoading(false); // Set loading to false when data is received
+      console.log('📬 Notifications updated:', activeNotifications.map(n => ({
         id: n.id,
         title: n.title,
         timestamp: n.timestamp?.toDate?.()
@@ -103,6 +98,11 @@ export default function NotificationScreen() {
         >
           <Text style={styles.title}>{item.title}</Text>
           <Text style={styles.body}>{item.body}</Text>
+          {item.appointmentDate && item.appointmentTime && (
+            <Text style={styles.appointmentInfo}>
+              Appointment: {item.appointmentDate} at {item.appointmentTime}
+            </Text>
+          )}
           <Text style={styles.timestamp}>
             {moment(item.timestamp?.toDate()).fromNow()}
           </Text>
@@ -145,5 +145,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 12,
     color: '#666',
+  },
+  appointmentInfo: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#2196F3',
+    fontWeight: '500',
   },
 });

@@ -12,6 +12,10 @@ export default function AppointmentBookingScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const service = params.service ? JSON.parse(params.service) : null;
+  
+  // Debug logging for navigation data
+  console.log('🔍 AppointmentBooking - Received params:', params);
+  console.log('🔍 AppointmentBooking - Parsed service:', service);
 
   const [selectedDate, setSelectedDate] = useState('');
   const [availableSlots, setAvailableSlots] = useState([]);
@@ -42,7 +46,9 @@ export default function AppointmentBookingScreen() {
   const maxDateStr = getMaxDateString();
 
   const barber = useMemo(() => {
-    return params.barber ? JSON.parse(params.barber) : null;
+    const result = params.barber ? JSON.parse(params.barber) : null;
+    console.log('🔍 AppointmentBooking - Parsed barber:', result);
+    return result;
   }, [params.barber]);
 
   useEffect(() => {
@@ -188,11 +194,12 @@ export default function AppointmentBookingScreen() {
   };
 
   if (!barber || !service) {
+    console.log('❌ AppointmentBooking - Missing data:', { barber, service });
     return (
       <View style={styles.centered}>
         <Ionicons name="alert-circle-outline" size={64} color="#f44336" />
         <Text style={styles.errorText}>
-          {error || 'Barber or service data is missing.'}
+          {error || `Missing data: ${!barber ? 'barber' : ''} ${!service ? 'service' : ''}`}
         </Text>
         <TouchableOpacity onPress={() => router.back()} style={styles.retryButton}>
           <Text style={styles.retryButtonText}>Go Back</Text>
