@@ -20,13 +20,18 @@ const AppointmentsScreen = () => {
         // Assuming getCustomerAppointments fetches appointments for the logged-in customer
         const appointmentsData = await getCustomerAppointments(user.uid);
         
-        appointmentsData.sort((a, b) => {
+        // Filter out cancelled appointments
+        const activeAppointments = appointmentsData.filter(appointment => 
+          appointment.status !== 'cancelled'
+        );
+        
+        activeAppointments.sort((a, b) => {
           const dateA = new Date(`${a.date}T${a.time}`);
           const dateB = new Date(`${b.date}T${b.time}`);
           return dateB - dateA;
         });
         
-        setAppointments(appointmentsData);
+        setAppointments(activeAppointments);
       } else {
         setError('User not authenticated');
         // Optionally redirect to login if user is not found

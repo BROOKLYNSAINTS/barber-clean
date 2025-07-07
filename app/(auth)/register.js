@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
-import { registerUser, createUserProfile } from '@/services/firebase'; // Adjusted path
+import { registerUser, createUserProfile } from '@/services/firebase';
 import { useRouter } from 'expo-router';
 
 const RegisterScreen = () => {
@@ -24,11 +24,17 @@ const RegisterScreen = () => {
       setLoading(true);
       setError('');
       const user = await registerUser(email, password);
+      
+      // Create user profile
+      await createUserProfile(user.uid, {
+        email: email,
+        userType: 'customer',
+        createdAt: new Date().toISOString(),
+      });
+      
       // Navigate to profile setup
       router.push({ pathname: '(auth)/profile-setup', params: { userId: user.uid } });
     } catch (error) {
-
-      console.log('Registration error:', error);
       console.error('Registration error:', error);
       setError(error.message);
     } finally {
@@ -152,4 +158,3 @@ const styles = StyleSheet.create({
 });
 
 export default RegisterScreen;
-

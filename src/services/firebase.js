@@ -16,7 +16,9 @@ import {
   where, 
   setDoc, 
   addDoc, 
-  serverTimestamp 
+  serverTimestamp,
+  updateDoc,
+  deleteDoc
 } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
@@ -285,6 +287,41 @@ export const addCommentToPost = async (postId, commentText) => {
   return { id: docRef.id, ...comment };
 };
 
+// Cancel appointment by updating status or deleting
+export const cancelAppointment = async (appointmentId, userId) => {
+  try {
+    console.log('Cancelling appointment:', appointmentId);
+    const appointmentRef = doc(db, 'appointments', appointmentId);
+    
+    // Option 1: Update status to cancelled (preserves data)
+    await updateDoc(appointmentRef, {
+      status: 'cancelled',
+      cancelledAt: serverTimestamp(),
+      cancelledBy: userId
+    });
+    
+    console.log('✅ Appointment cancelled successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error cancelling appointment:', error);
+    throw error;
+  }
+};
+
+// Delete appointment completely (if you prefer to remove it entirely)
+export const deleteAppointment = async (appointmentId) => {
+  try {
+    console.log('Deleting appointment:', appointmentId);
+    const appointmentRef = doc(db, 'appointments', appointmentId);
+    await deleteDoc(appointmentRef);
+    
+    console.log('✅ Appointment deleted successfully');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error deleting appointment:', error);
+    throw error;
+  }
+};
 
 export {
   app,
