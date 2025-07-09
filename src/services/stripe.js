@@ -6,17 +6,26 @@ import Constants from 'expo-constants';
 import { db } from '@/services/firebase';
 import { doc, setDoc, getDoc, updateDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
-// Get Stripe publishable key from environment
-const STRIPE_PUBLISHABLE_KEY = Constants.expoConfig?.extra?.STRIPE_PUBLISHABLE_KEY || 'pk_test_dummyKeyForDemoPurposesOnly';
+// Get Stripe publishable key from environment - NO DUMMY FALLBACK
+const STRIPE_PUBLISHABLE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || Constants.expoConfig?.extra?.stripePublishableKey;
+
+if (!STRIPE_PUBLISHABLE_KEY || STRIPE_PUBLISHABLE_KEY.includes('dummy')) {
+  console.error('⚠️ STRIPE_PUBLISHABLE_KEY not configured properly');
+}
 
 // Initialize Stripe
 export const initializeStripe = async () => {
   try {
+    if (!STRIPE_PUBLISHABLE_KEY) {
+      throw new Error('Stripe publishable key not configured');
+    }
+    
     await initStripe({
       publishableKey: STRIPE_PUBLISHABLE_KEY,
       merchantIdentifier: 'merchant.com.barberapp',
       urlScheme: 'barberapp',
     });
+    console.log('✅ Stripe initialized successfully');
   } catch (error) {
     console.error('Error initializing Stripe:', error);
     throw error;
