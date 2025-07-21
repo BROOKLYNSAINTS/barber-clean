@@ -108,15 +108,36 @@ export const getBarberServices = async (barberId) => {
 export const getBarberAvailability = async (barberId, selectedDate) => {
   const docRef = doc(db, 'users', barberId);
   const docSnap = await getDoc(docRef);
-  if (!docSnap.exists()) return [];
+  if (!docSnap.exists()) {
+    console.error('No such barber document!');
+    return [];
+  }
 
   const barber = docSnap.data();
   const { workingDays, workingHours, unavailableDates } = barber;
-  if (!workingDays || !workingHours) return [];
-  if (Array.isArray(unavailableDates) && unavailableDates.includes(selectedDate)) return [];
+  console.log('Barber workingDays:', workingDays, 'workingHours:', workingHours); 
+  console.log('Barber unavailableDates:', unavailableDates);  
+
+  if (!workingDays || !workingHours) {
+    console.error('Barber does not have working days or hours set');  
+    return [];
+  }
+  console.log('Barber workingDays:', workingDays, 'workingHours:', workingHours);
+
+  if (Array.isArray(unavailableDates) && unavailableDates.includes(selectedDate)) {
+    console.error('Barber is unavailable on this date');
+    console.log('check to see if this is the spot job is failing:', unavailableDates);
+    return [];
+  }
 
   // Safely parse selectedDate as local date to avoid UTC shift bug
-  if (!selectedDate || typeof selectedDate !== 'string' || !selectedDate.includes('-')) return [];
+  console.log('check to see if this is the spot job is failing:', unavailableDates);
+
+  if (!selectedDate || typeof selectedDate !== 'string' || !selectedDate.includes('-')) {
+    console.log('Invalid selectedDate format:', selectedDate);
+    console.error('Invalid selectedDate format:', selectedDate);
+    return [];
+}
   const [year, month, day] = selectedDate.split('-').map(Number);
   if (isNaN(year) || isNaN(month) || isNaN(day)) return [];
 
@@ -155,10 +176,11 @@ export const createAppointment = async (data) => {
     createdAt: serverTimestamp(),
   });
 
-  return {
-    id: docRef.id,
-    ...data,
-  };
+return {
+  ...docRef,  // if you're returning the ref manually
+  id: docRef.id,
+  ...data  // Make sure this includes date and time
+};
 };
 
 export const getCustomerAppointments = async (customerId) => {
@@ -179,7 +201,6 @@ export const getBarberAppointments = async (appointmentId) => {
   try {
     const apptRef = doc(db, 'appointments', appointmentId);
     const apptSnap = await getDoc(apptRef);
-    console.log("Current UID:", auth.currentUser?.uid);
     if (!apptSnap.exists()) return null;
     return { id: apptSnap.id, ...apptSnap.data() };
   } catch (error) {

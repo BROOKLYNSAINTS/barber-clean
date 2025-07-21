@@ -256,7 +256,9 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   header: {
-    padding: 20,
+    paddingTop: 48, // or 56 for even lower
+    paddingBottom: 20,
+    paddingHorizontal: 20,
     backgroundColor: '#f5f5f5',
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',

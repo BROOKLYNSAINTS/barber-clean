@@ -8,14 +8,23 @@
       "distribution": "internal"
     },
     "production": {
-      "distribution": "store",
+      "developmentClient": false,
       "ios": {
-        "buildConfiguration": "Release"
+        "simulator": false,
+        "buildConfiguration": "Debug",
+        "autoIncrement": true,
+        "distribution": "internal"
       },
       "android": {
-        "buildType": "apk"
-      },
-      "autoIncrement": true
+        "buildType": "apk",
+        "autoIncrement": true,
+        "distribution": "internal"
+      }
+    },
+    "simulator": {
+      "ios": {
+        "simulator": true
+      }
     }
   },
   "submit": {

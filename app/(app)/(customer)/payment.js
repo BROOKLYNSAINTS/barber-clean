@@ -13,6 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useStripe } from '@stripe/stripe-react-native';
 import { auth } from '@/services/firebase';
 import { createAndPresentServicePaymentSheet } from '@/services/stripe';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const PaymentScreen = () => {
   const router = useRouter();
@@ -127,63 +128,65 @@ const PaymentScreen = () => {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        <Text style={styles.title}>Payment</Text>
-      </View>
-
-      <View style={styles.serviceInfo}>
-        <Text style={styles.serviceTitle}>{serviceName}</Text>
-        <Text style={styles.barberName}>with {barberName}</Text>
-        <Text style={styles.amount}>${amount.toFixed(2)}</Text>
-      </View>
-
-      <View style={styles.paymentSection}>
-        <Text style={styles.sectionTitle}>Payment Details</Text>
-        
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Service</Text>
-          <Text style={styles.summaryValue}>${amount.toFixed(2)}</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 20 }}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          {/* <Text style={styles.title}>Payment</Text> */}
         </View>
-        
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Processing Fee</Text>
-          <Text style={styles.summaryValue}>$0.00</Text>
-        </View>
-        
-        <View style={[styles.summaryRow, styles.totalRow]}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>${amount.toFixed(2)}</Text>
-        </View>
-      </View>
 
-      <View style={styles.buttonSection}>
-        <TouchableOpacity 
-          style={[styles.payButton, loading && styles.disabledButton]} 
-          onPress={handleCardPayment}
-          disabled={loading || !paymentReady}
-        >
-          <Ionicons name="card" size={20} color="#fff" style={styles.buttonIcon} />
-          <Text style={styles.payButtonText}>
-            {loading ? 'Processing...' : `Pay $${amount.toFixed(2)}`}
+        <View style={styles.serviceInfo}>
+          <Text style={styles.serviceTitle}>{serviceName}</Text>
+          <Text style={styles.barberName}>with {barberName}</Text>
+          <Text style={styles.amount}>${amount.toFixed(2)}</Text>
+        </View>
+
+        <View style={styles.paymentSection}>
+          <Text style={styles.sectionTitle}>Payment Details</Text>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Service</Text>
+            <Text style={styles.summaryValue}>${amount.toFixed(2)}</Text>
+          </View>
+          
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Processing Fee</Text>
+            <Text style={styles.summaryValue}>$0.00</Text>
+          </View>
+          
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>${amount.toFixed(2)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.buttonSection}>
+          <TouchableOpacity 
+            style={[styles.payButton, loading && styles.disabledButton]} 
+            onPress={handleCardPayment}
+            disabled={loading || !paymentReady}
+          >
+            <Ionicons name="card" size={20} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.payButtonText}>
+              {loading ? 'Processing...' : `Pay $${amount.toFixed(2)}`}
+            </Text>
+          </TouchableOpacity>
+          
+          <Text style={styles.securityNote}>
+            <Ionicons name="shield-checkmark" size={16} color="#4CAF50" />
+            {' '}Your payment is secured by Stripe
           </Text>
-        </TouchableOpacity>
-        
-        <Text style={styles.securityNote}>
-          <Ionicons name="shield-checkmark" size={16} color="#4CAF50" />
-          {' '}Your payment is secured by Stripe
-        </Text>
-      </View>
+        </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          By completing this payment, you agree to our terms of service.
-        </Text>
-      </View>
-    </ScrollView>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            By completing this payment, you agree to our terms of service.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
@@ -204,20 +207,24 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
+    flexDirection: 'column',
+    alignItems: 'center', // Center horizontally
+    paddingTop: 72,       // Space above header
+    paddingBottom: 20,
+    paddingHorizontal: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
   backButton: {
-    marginRight: 16,
+    alignSelf: 'flex-start', // Keep back button on the left
+    marginBottom: 8,
     padding: 4,
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
+    marginTop: 24, // Increase this for more space below back button
   },
   serviceInfo: {
     padding: 20,

@@ -27,12 +27,15 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.ScheduleSync.barber",
       "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app uses your microphone for voice commands.",
         "NSCalendarsUsageDescription": "This app needs access to your calendar.",
         "NSRemindersUsageDescription": "This app needs access to your reminders.",
         "NSUserNotificationUsageDescription": "This app needs notification permissions to remind you about appointments.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload service images."
+
       },
       "buildNumber": "4"
     },

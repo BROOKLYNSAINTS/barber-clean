@@ -1,166 +1,191 @@
-// services/openai.js
+// src/services/openai.js
 
-import { Configuration, OpenAIApi } from 'openai';
 import Constants from 'expo-constants';
 
-const testing = true;  // 👉 Set to false when you are ready for real OpenAI calls
+const API_KEY = Constants.expoConfig?.extra?.OPENAI_API_KEY;
+const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
-let openai = null;
-
-if (!testing) {
-  const configuration = new Configuration({
-    apiKey: 'sk-dummy-key-for-demo-purposes-only',
-  });
-  openai = new OpenAIApi(configuration);
-}
-
-// Generate chat response
-export const generateChatResponse = async (messages) => {
-  if (testing) {
-    console.log("Testing mode: generateChatResponse fake output");
-    return "This is a fake chat response.";
+export const generateChatResponse = async (text, context = []) => {
+  if (!API_KEY) {
+    console.error("❌ Missing OpenAI API Key");
+    return { success: false, error: "Missing API key" };
   }
 
+  const messages = [
+    { role: 'system', content: 'You are a helpful AI assistant for a barbershop.' },
+    ...context,
+    { role: 'user', content: text },
+  ];
+
   try {
-    const response = await openai.createChatCompletion({
-      model: 'gpt-3.5-turbo',
-      messages,
-      temperature: 0.7,
-      max_tokens: 500,
+    const response = await fetch(OPENAI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages,
+        temperature: 0.7,
+        max_tokens: 300,
+      }),
     });
-    return response.data.choices[0].message.content;
-  } catch (error) {
-    console.error('Error generating chat response:', error);
-    throw error;
-  }
-};
 
-// Generate hair style recommendation
-export const generateHairStyleRecommendation = async (userPreferences) => {
-  if (testing) {
-    console.log("Testing mode: generateHairStyleRecommendation fake output");
-    return "This is a fake hairstyle recommendation.";
-  }
+    const data = await response.json();
 
-  try {
-    const { faceShape, hairType, currentLength, stylePreference, occasion } = userPreferences;
-    const prompt = `As a professional barber, recommend a hairstyle for a client with:
-      - Face shape: ${faceShape}
-      - Hair type: ${hairType}
-      - Current hair length: ${currentLength}
-      - Style preference: ${stylePreference}
-      - Occasion: ${occasion}`;
+    if (data.choices && data.choices.length > 0) {
+      const content = data.choices[0].message.content.trim();
+      console.log("🧪 Full OpenAI response:", JSON.stringify(data, null, 2));
 
-    const response = await openai.createCompletion({
-      model: 'text-davinci-003',
-      prompt,
-      temperature: 0.7,
-      max_tokens: 500,
-    });
-    return response.data.choices[0].text.trim();
-  } catch (error) {
-    console.error('Error generating hair style recommendation:', error);
-    throw error;
-  }
-};
-
-// Analyze appointment preferences
-export const analyzeAppointmentPreferences = async (preferences) => {
-  if (testing) {
-    console.log("Testing mode: analyzeAppointmentPreferences fake output");
-    return "This is a fake appointment analysis.";
-  }
-
-  try {
-    const { serviceType, timePreference, dayPreference, urgency, specialRequests } = preferences;
-    const prompt = `Analyze customer preferences for:
-      - Service type: ${serviceType}
-      - Time preference: ${timePreference}
-      - Day preference: ${dayPreference}
-      - Urgency: ${urgency}
-      - Special requests: ${specialRequests}`;
-
-    const response = await openai.createCompletion({
-      model: 'text-davinci-003',
-      prompt,
-      temperature: 0.7,
-      max_tokens: 300,
-    });
-    return response.data.choices[0].text.trim();
-  } catch (error) {
-    console.error('Error analyzing appointment preferences:', error);
-    throw error;
-  }
-};
-
-// Generate message templates
-export const generateMessageTemplate = async (messageType, customerDetails) => {
-  if (testing) {
-    console.log("Testing mode: generateMessageTemplate fake output");
-    return "This is a fake message template.";
-  }
-
-  try {
-    const { name, appointmentType, appointmentTime, lastVisit } = customerDetails;
-    let prompt = '';
-
-    switch (messageType) {
-      case 'appointment_confirmation':
-        prompt = `Generate an appointment confirmation for ${name} on ${appointmentTime} for ${appointmentType}.`;
-        break;
-      case 'appointment_reminder':
-        prompt = `Generate an appointment reminder for ${name} on ${appointmentTime} for ${appointmentType}.`;
-        break;
-      case 'follow_up':
-        prompt = `Generate a follow-up message for ${name} who last visited for ${appointmentType} on ${lastVisit}.`;
-        break;
-      case 'special_offer':
-        prompt = `Generate a special offer message for ${name} who last visited for ${appointmentType} on ${lastVisit}.`;
-        break;
-      default:
-        prompt = `Generate a general message for ${name}.`;
+      return { success: true, text: content };
+    } else {
+      console.error("❌ No choices returned:", data);
+      return { success: false, error: 'No choices returned' };
     }
+  } catch (err) {
+    console.error("❌ Fetch error:", err);
+    return { success: false, error: err.message || 'Unknown error' };
+  }
+};
 
-    const response = await openai.createCompletion({
-      model: 'text-davinci-003',
-      prompt,
-      temperature: 0.7,
-      max_tokens: 200,
+export const assistWithAppointmentBooking = async (userPrompt, availableSlots) => {
+  const prompt = `
+You are an AI assistant helping schedule barber appointments.
+The customer said: "${userPrompt}".
+The available time slots are: ${availableSlots.join(', ')}.
+Based on the input, suggest the best time slot.
+`;
+
+  try {
+    const response = await fetch(OPENAI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.5,
+        max_tokens: 100,
+      }),
     });
-    return response.data.choices[0].text.trim();
+
+    const data = await response.json();
+
+    if (data?.choices?.length > 0) {
+      const text = data.choices[0].message.content;
+      const match = text.match(/\b\d{1,2}:\d{2}\b\s?(AM|PM)?/i);
+      const suggestedTime = match ? match[0] : null;
+
+      return {
+        success: true,
+        suggestedTime,
+        explanation: text,
+      };
+    } else {
+      return { success: false, error: 'No response from OpenAI.' };
+    }
+  } catch (err) {
+    console.error('❌ AI request failed:', err);
+    return { success: false, error: 'AI request failed.' };
+  }
+};
+
+export const generateHairStyleRecommendation = async (userPreferences) => {
+  const { faceShape, hairType, currentLength, stylePreference, occasion } = userPreferences;
+  const prompt = `As a professional barber, recommend a hairstyle for a client with:\n- Face shape: ${faceShape}\n- Hair type: ${hairType}\n- Current hair length: ${currentLength}\n- Style preference: ${stylePreference}\n- Occasion: ${occasion}`;
+
+  try {
+    const response = await fetch(TEXT_DAVINCI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-davinci-003',
+        prompt,
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    });
+
+    const data = await response.json();
+    return data?.choices?.[0]?.text?.trim() || 'No recommendation returned.';
   } catch (error) {
-    console.error('Error generating message template:', error);
+    console.error('❌ Error generating hairstyle recommendation:', error);
     throw error;
   }
 };
 
-// Generate barber admin help
-export const generateBarberAdminHelp = async (query) => {
-  if (testing) {
-    console.log("Testing mode: generateBarberAdminHelp fake output");
-    return "This is a fake barber admin help response.";
+export const generateMessageTemplate = async (messageType, customerDetails) => {
+  const { name, appointmentType, appointmentTime, lastVisit } = customerDetails;
+  let prompt = '';
+
+  switch (messageType) {
+    case 'appointment_confirmation':
+      prompt = `Generate an appointment confirmation for ${name} on ${appointmentTime} for ${appointmentType}.`;
+      break;
+    case 'appointment_reminder':
+      prompt = `Generate an appointment reminder for ${name} on ${appointmentTime} for ${appointmentType}.`;
+      break;
+    case 'follow_up':
+      prompt = `Generate a follow-up message for ${name} who last visited for ${appointmentType} on ${lastVisit}.`;
+      break;
+    case 'special_offer':
+      prompt = `Generate a special offer message for ${name} who last visited for ${appointmentType} on ${lastVisit}.`;
+      break;
+    default:
+      prompt = `Generate a general message for ${name}.`;
   }
 
   try {
-    const prompt = `As a barber shop AI assistant, help with the following query: "${query}".`;
-
-    const response = await openai.createCompletion({
-      model: 'text-davinci-003',
-      prompt,
-      temperature: 0.7,
-      max_tokens: 500,
+    const response = await fetch(TEXT_DAVINCI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-davinci-003',
+        prompt,
+        temperature: 0.7,
+        max_tokens: 200,
+      }),
     });
-    return response.data.choices[0].text.trim();
+
+    const data = await response.json();
+    return data?.choices?.[0]?.text?.trim() || 'No message returned.';
   } catch (error) {
-    console.error('Error generating barber admin help:', error);
+    console.error('❌ Error generating message template:', error);
     throw error;
   }
 };
 
-export default {
-  generateChatResponse,
-  generateHairStyleRecommendation,
-  analyzeAppointmentPreferences,
-  generateMessageTemplate,
-  generateBarberAdminHelp,
+export const generateBarberAdminHelp = async (query) => {
+  const prompt = `As a barber shop AI assistant, help with the following query: \"${query}\".`;
+
+  try {
+    const response = await fetch(TEXT_DAVINCI_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'text-davinci-003',
+        prompt,
+        temperature: 0.7,
+        max_tokens: 500,
+      }),
+    });
+
+    const data = await response.json();
+    return data?.choices?.[0]?.text?.trim() || 'No help text returned.';
+  } catch (error) {
+    console.error('❌ Error generating barber admin help:', error);
+    throw error;
+  }
 };

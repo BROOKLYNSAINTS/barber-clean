@@ -12,7 +12,7 @@ export default function BarberTabLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // Screens can manage their own headers
+        headerShown: false,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textSecondary,
         tabBarStyle: {
@@ -26,7 +26,7 @@ export default function BarberTabLayout() {
       }}
     >
       <Tabs.Screen
-        name="dashboard" // This will be app/(app)/(barber)/dashboard.js
+        name="dashboard"
         options={{
           title: "Dashboard",
           tabBarIcon: ({ color, size }) => (
@@ -61,7 +61,7 @@ export default function BarberTabLayout() {
           ),
         }}
       />
-       <Tabs.Screen
+      <Tabs.Screen
         name="network"
         options={{
           title: "Network",
@@ -71,21 +71,29 @@ export default function BarberTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="communication" // Placeholder for a general communication/chat hub for barbers
+        name="chat-list"
         options={{
-          title: "Messages",
+          title: "Chat List",
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles-outline" size={size} color={color} />
+            <Ionicons name="list-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="chat-assistant"
+        options={{
+          title: "Chat Assistant",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="sparkles-outline" size={size} color={color} />
           ),
         }}
       />
       {/* Hidden screens in this tab group, accessed via router.push */}
       <Tabs.Screen name="bulletin-post-details" options={{ href: null, title: 'Post Details' }} />
       <Tabs.Screen name="subscription" options={{ href: null, title: 'Subscription' }} />
+      <Tabs.Screen name="chat" options={{ href: null, title: 'chat' }} />
+      <Tabs.Screen name="view profile" options={{ href: null, title: 'view profile' }} />
       <Tabs.Screen name="subscription-payment" options={{ href: null, title: 'Payment' }} />
-      {/* Add other barber-specific stack screens here if they are not tabs */}
-      {/* e.g., <Tabs.Screen name="barber-profile-view" options={{ href: null }} /> */}
-
     </Tabs>
   );
 }

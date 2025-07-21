@@ -90,14 +90,14 @@ export default function CustomerTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="chat"
+        name="chat-assistant"
         options={{
-          title: 'AI Assistant',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles-outline" size={size} color={color} />
-          ),
-        }}
-      />
+        title: 'AI Assistant',
+        tabBarIcon: ({ color, size }) => (
+      <Ionicons name="chatbubbles-outline" size={size}  color={color} />
+    ),
+  }}
+/>
       <Tabs.Screen
         name="edit-profile"
         options={{
@@ -107,6 +107,17 @@ export default function CustomerTabLayout() {
           ),
         }}
       />
+            <Tabs.Screen
+        name="notification"
+        options={{
+          title: 'Notifications',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="notifications-outline" size={size} color={color} />
+          ),
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
+        }}
+      />
+
       {/* Hidden screens */}
       <Tabs.Screen name="barber-selection" options={{ href: null }} />
       <Tabs.Screen name="barber-services" options={{ href: null }} />
@@ -117,16 +128,8 @@ export default function CustomerTabLayout() {
       <Tabs.Screen name="hairstyle-recommendation" options={{ href: null }} />
       <Tabs.Screen name="ai-booking-assistant" options={{ href: null }} />
       <Tabs.Screen name="tip" options={{ href: null }} />
-      <Tabs.Screen
-        name="notification"
-        options={{
-          title: 'Notifications',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="notifications-outline" size={size} color={color} />
-          ),
-          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-        }}
-      />
+      <Tabs.Screen name="payment" options={{ href: null }} />
+      <Tabs.Screen name="chat" options={{ href: null }} />
     </Tabs>
   );
 }

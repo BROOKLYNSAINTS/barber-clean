@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator }
 import { Ionicons } from '@expo/vector-icons';
 import { getCustomerAppointments, auth } from '@/services/firebase'; // Adjusted path
 import { useRouter, useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context'; // Add this import
 
 const AppointmentsScreen = () => {
   const router = useRouter();
@@ -166,21 +167,23 @@ const AppointmentsScreen = () => {
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>My Appointments</Text>
+      </View>
       <FlatList
         data={appointments}
         renderItem={renderAppointmentItem}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContainer}
       />
-      
       <TouchableOpacity 
         style={styles.floatingButton}
         onPress={() => router.push('/(app)/(customer)/')}
       >
         <Ionicons name="add" size={24} color="#fff" />
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -326,6 +329,19 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
+  },
+  header: {
+    paddingTop: 16,
+    paddingBottom: 8,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
 });
 
