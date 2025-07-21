@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getBarberAppointments, getUserProfile, auth } from '@/services/firebase'; // Adjusted path
+import { getBarberAppointments, getUserProfile, auth } from '@/services/firebase';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { createDummyAppointments } from "@/utils/test";
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; // Add this import
 
 const BarberDashboardScreen = () => {
   const router = useRouter();
+  const insets = useSafeAreaInsets(); // Add this hook
   const [profile, setProfile] = useState(null);
   const [appointments, setAppointments] = useState([]);
   const [todayAppointments, setTodayAppointments] = useState([]);
@@ -121,16 +123,16 @@ const BarberDashboardScreen = () => {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <SafeAreaView style={styles.centered}>
         <ActivityIndicator size="large" color="#2196F3" />
         <Text style={styles.loadingText}>Loading dashboard...</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.centered}>
+      <SafeAreaView style={styles.centered}>
         <Ionicons name="alert-circle-outline" size={64} color="#f44336" />
         <Text style={styles.errorText}>{error}</Text>
         <TouchableOpacity 
@@ -139,16 +141,16 @@ const BarberDashboardScreen = () => {
         >
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
+    <SafeAreaView style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
         <Text style={styles.welcomeText}>Welcome, {profile?.name || 'Barber'}</Text>
         
-        {profile?.paymentInfo?.subscriptionActive ? (
+        {profile?.subscription?.status === 'active' ? (
           <View style={styles.subscriptionActive}>
             <Ionicons name="checkmark-circle" size={16} color="#4CAF50" />
             <Text style={styles.subscriptionActiveText}>Subscription Active</Text>
@@ -287,7 +289,7 @@ const BarberDashboardScreen = () => {
           </>
         }
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -331,6 +333,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
+    paddingTop: 16, // This will be overridden by the dynamic padding
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#ddd',

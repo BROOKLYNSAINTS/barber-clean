@@ -18,7 +18,10 @@ export async function requestPermissions() {
 // Utility to convert 12-hour time with unicode spaces to 24-hour format
 function to24Hour(timeStr) {
   if (!timeStr) return '';
+  // Replace all Unicode and regular spaces with a single space
   timeStr = String(timeStr).replace(/[\u202F\u00A0\u2009\u2007\u200A\u200B\u200C\u200D\uFEFF\s]+/g, ' ').trim();
+  // Insert a space before AM/PM if missing
+  timeStr = timeStr.replace(/([0-9])([AP]M)$/i, '$1 $2');
   const parts = timeStr.split(' ');
   const time = parts[0];
   const modifier = parts[1] ? parts[1].toUpperCase() : '';

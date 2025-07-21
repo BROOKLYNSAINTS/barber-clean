@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { generateChatResponse } from '@/services/openai'; // Adjusted path
+import { useRouter } from 'expo-router';
 import * as Speech from 'expo-speech';
 // import * as Voice from 'expo-speech'; // Voice seems to be a duplicate of Speech or intended for expo-voice (deprecated)
 // For voice input, consider using a library like react-native-voice or expo-av for recording and then sending to a Speech-to-Text API
@@ -26,8 +27,15 @@ const ChatScreen = () => {
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false); // This state might be unused if Voice API is problematic
   const [error, setError] = useState('');
+  const [conversationState, setConversationState] = useState({
+    step: 'start', // start, zip, barber, service, datetime, confirm
+    zip: '',
+    barber: null,
+    service: null,
+    datetime: null,
+  });
   const scrollViewRef = useRef();
-
+  const router = useRouter();
   // Commenting out Voice related useEffects as expo-speech might not provide this STT functionality directly
   // and expo-voice is deprecated. This part would need a dedicated STT solution.
   /*
@@ -112,6 +120,12 @@ const ChatScreen = () => {
           text: response.text,
           sender: 'assistant',
         };
+        if (response.text.toLowerCase().includes('book') || response.text.toLowerCase().includes('appointment')) {
+        router.push('/(app)/(customer)/index');
+        }
+        else  
+          if (response.text.toLowerCase().includes('payment')) { response.text = 'To proceed with payment, please select a service and barber first.'; }
+        setInputText('');
         setMessages((prev) => [...prev, assistantMessage]);
         speakMessage(response.text);
       } else {
@@ -123,14 +137,92 @@ const ChatScreen = () => {
     } finally {
       setLoading(false);
     }
+
+    // Step 1: Ask for zip code if not known
+    if (conversationState.step === 'start') {
+      if (!customer.zip) {
+        setConversationState({ ...conversationState, step: 'zip' });
+        setMessages(prev => [...prev, { id: Date.now().toString(), text: "What's your zip code?", sender: 'assistant' }]);
+        return;
+      } else {
+        setConversationState({ ...conversationState, step: 'barber', zip: customer.zip });
+      }
+    }
+
+    // Step 2: List barbers in zip code
+    if (conversationState.step === 'zip') {
+      // Validate zip, fetch barbers
+      const barbers = await fetchBarbersByZip(text);
+      if (barbers.length === 0) {
+        setMessages(prev => [...prev, { id: Date.now().toString(), text: "Sorry, no barbers found in that area. Try another zip code?", sender: 'assistant' }]);
+        return;
+      }
+      setConversationState({ ...conversationState, step: 'barber', zip: text });
+      setMessages(prev => [...prev, { id: Date.now().toString(), text: `Here are barbers in your area: ${barbers.map(b => b.name).join(', ')}. Which barber would you like to book?`, sender: 'assistant' }]);
+      return;
+    }
+
+    // Step 3: List services for selected barber
+    if (conversationState.step === 'barber') {
+      const selectedBarber = await fetchBarberByName(text, conversationState.zip);
+      if (!selectedBarber) {
+        setMessages(prev => [...prev, { id: Date.now().toString(), text: "I couldn't find that barber. Please choose from the list.", sender: 'assistant' }]);
+        return;
+      }
+      setConversationState({ ...conversationState, step: 'service', barber: selectedBarber });
+      setMessages(prev => [...prev, { id: Date.now().toString(), text: `Here are services offered by ${selectedBarber.name}: ${selectedBarber.services.join(', ')}. Which service would you like?`, sender: 'assistant' }]);
+      return;
+    }
+
+    // Step 4: Ask for date and time
+    if (conversationState.step === 'service') {
+      const selectedService = text; // You may want to validate this
+      setConversationState({ ...conversationState, step: 'datetime', service: selectedService });
+      setMessages(prev => [...prev, { id: Date.now().toString(), text: "What date and time would you like for your appointment?", sender: 'assistant' }]);
+      return;
+    }
+
+    // Step 5: Check availability and confirm
+    if (conversationState.step === 'datetime') {
+      const requestedDateTime = text; // Parse/validate date/time
+      const isAvailable = await checkBarberAvailability(conversationState.barber.id, requestedDateTime);
+      if (!isAvailable) {
+        const alternatives = await suggestAlternativeTimes(conversationState.barber.id, requestedDateTime);
+        setMessages(prev => [...prev, { id: Date.now().toString(), text: `Sorry, that time isn't available. Here are some alternatives: ${alternatives.join(', ')}`, sender: 'assistant' }]);
+        return;
+      }
+      setConversationState({ ...conversationState, step: 'confirm', datetime: requestedDateTime });
+      setMessages(prev => [...prev, { id: Date.now().toString(), text: `Great! Your appointment is set for ${requestedDateTime}. Would you like to confirm?`, sender: 'assistant' }]);
+      return;
+    }
+
+    // Step 6: Final confirmation and reminders
+    if (conversationState.step === 'confirm') {
+      if (text.toLowerCase().includes('yes')) {
+        await bookAppointment(conversationState);
+        await addToCalendar(conversationState);
+        setMessages(prev => [...prev, { id: Date.now().toString(), text: "Your appointment is confirmed! You'll get a reminder 24 hours and 1 hour before.", sender: 'assistant' }]);
+        setConversationState({ step: 'start', zip: '', barber: null, service: null, datetime: null });
+        return;
+      } else {
+        setMessages(prev => [...prev, { id: Date.now().toString(), text: "Okay, let me know if you'd like to reschedule.", sender: 'assistant' }]);
+        setConversationState({ step: 'start', zip: '', barber: null, service: null, datetime: null });
+        return;
+      }
+    }
+
+    // ...existing OpenAI fallback logic...
   };
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0} // Adjust as needed for your header height
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Chat Assistant</Text>
+      </View>
       <ScrollView
         ref={scrollViewRef}
         style={styles.messagesContainer}
@@ -189,6 +281,19 @@ const ChatScreen = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
+  header: {
+    paddingTop: 64, // Move title further down
+    paddingBottom: 8,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2196F3',
+  },
   messagesContainer: { flex: 1 },
   messagesContent: { padding: 16, paddingBottom: 24 },
   messageBubble: {

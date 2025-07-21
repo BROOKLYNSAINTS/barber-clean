@@ -4,8 +4,12 @@ import { Slot } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
-import { AuthProvider } from '../src/contexts/AuthContext'; // adjust if needed
+import { AuthProvider } from '../src/contexts/AuthContext';
 import { StripeProvider } from '@stripe/stripe-react-native';
+import Constants from 'expo-constants';
+
+// Get the real Stripe key
+const STRIPE_PUBLISHABLE_KEY = process.env.STRIPE_PUBLISHABLE_KEY || Constants.expoConfig?.extra?.STRIPE_PUBLISHABLE_KEY;
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -16,7 +20,7 @@ Notifications.setNotificationHandler({
 });
 
 export default function RootLayout() {
-useEffect(() => {
+  useEffect(() => {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
         shouldShowAlert: true,
@@ -29,7 +33,7 @@ useEffect(() => {
   return (
     <SafeAreaProvider>
       <StripeProvider
-        publishableKey="pk_test_dummyKeyForDemoPurposesOnly"
+        publishableKey={STRIPE_PUBLISHABLE_KEY}
         merchantIdentifier="merchant.com.barberapp"
       >
         <AuthProvider>

@@ -86,6 +86,10 @@ export default function EditProfileScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Edit Profile</Text>
+      </View>
+
       <Text style={styles.label}>Name</Text>
       <TextInput value={name} onChangeText={setName} style={styles.input} />
 
@@ -114,6 +118,17 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
     backgroundColor: '#fff',
+  },
+  header: {
+    paddingTop: 48, // Adjust as needed for spacing
+    paddingBottom: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
   centered: {
     flex: 1,

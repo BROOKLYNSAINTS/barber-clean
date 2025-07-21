@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Switch } from 'react-native';
-import { createUserProfile } from '@/services/firebase'; // Adjusted path
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Switch, Alert } from 'react-native';
+import { createUserProfile } from '@/services/firebase';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { createSubscriptionPaymentSheet } from '@/services/stripe';
 
 const ProfileSetupScreen = () => {
   const router = useRouter();
-  const { userId } = useLocalSearchParams(); // Get userId from route params
+  const { userId } = useLocalSearchParams();
   
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -15,10 +16,35 @@ const ProfileSetupScreen = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Credit card fields for barbers
-  const [cardNumber, setCardNumber] = useState('');
-  const [expiryDate, setExpiryDate] = useState('');
-  const [cvv, setCvv] = useState('');
+  const handleBarberSubscription = async () => {
+    try {
+      setLoading(true);
+      console.log('🔔 Creating barber subscription...');
+      
+      // Fixed with your actual price ID
+      const BARBER_SUBSCRIPTION_PRICE_ID = 'price_1RK5IUIvx79ISETig1HxzVwK';
+      
+      const subscriptionResult = await createSubscriptionPaymentSheet(userId, BARBER_SUBSCRIPTION_PRICE_ID);
+      
+      if (subscriptionResult.success) {
+        console.log('✅ Subscription created successfully');
+        Alert.alert('Success!', 'Your barber subscription is now active. Welcome aboard!');
+        return true;
+      } else if (subscriptionResult.canceled) {
+        Alert.alert('Setup Canceled', 'Subscription setup was canceled. You can set this up later in settings.');
+        return false;
+      } else {
+        throw new Error('Subscription creation failed');
+      }
+      
+    } catch (error) {
+      console.error('❌ Subscription error:', error);
+      Alert.alert('Subscription Error', 'Failed to create subscription. Please try again.');
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     try {
@@ -27,13 +53,17 @@ const ProfileSetupScreen = () => {
         return;
       }
 
-      if (isBarber && (!cardNumber || !expiryDate || !cvv)) {
-        setError('Please fill in all payment information');
-        return;
-      }
-
       setLoading(true);
       setError('');
+
+      // For barbers, handle subscription first
+      if (isBarber) {
+        const subscriptionSuccess = await handleBarberSubscription();
+        if (!subscriptionSuccess) {
+          setLoading(false);
+          return;
+        }
+      }
 
       const userData = {
         name,
@@ -41,15 +71,16 @@ const ProfileSetupScreen = () => {
         address,
         zipcode,
         role: isBarber ? 'barber' : 'customer',
+        createdAt: new Date().toISOString(),
       };
 
       if (isBarber) {
-        userData.paymentInfo = {
-          cardNumber,
-          expiryDate,
-          cvv,
-          subscriptionActive: true,
-          subscriptionDate: new Date().toISOString(),
+        userData.subscription = {
+          status: 'active',
+          plan: 'barber_monthly',
+          startDate: new Date().toISOString(),
+          amount: 30,
+          currency: 'usd',
         };
       }
 
@@ -58,8 +89,7 @@ const ProfileSetupScreen = () => {
       if (isBarber) {
         router.replace('/(app)/(barber)/dashboard');
       } else {
-        // BarberSelectionScreen was moved to (app)/(customer)/index.js
-        router.replace('/(app)/(customer)/'); 
+        router.replace('/(app)/(customer)/');
       }
     } catch (error) {
       console.error('Profile setup error:', error);
@@ -129,43 +159,17 @@ const ProfileSetupScreen = () => {
       
       {isBarber && (
         <View style={styles.barberSection}>
-          <Text style={styles.sectionTitle}>Payment Information</Text>
+          <Text style={styles.sectionTitle}>Barber Subscription</Text>
           <Text style={styles.sectionSubtitle}>
-            $30 monthly subscription fee will be charged
+            $30/month - Secure payment via Stripe
           </Text>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Card Number</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your card number"
-              value={cardNumber}
-              onChangeText={setCardNumber}
-              keyboardType="numeric"
-            />
-          </View>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>Expiry Date (MM/YY)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="MM/YY"
-              value={expiryDate}
-              onChangeText={setExpiryDate}
-            />
-          </View>
-          
-          <View style={styles.inputContainer}>
-            <Text style={styles.label}>CVV</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter CVV"
-              value={cvv}
-              onChangeText={setCvv}
-              keyboardType="numeric"
-              secureTextEntry
-            />
-          </View>
+          <Text style={styles.featuresText}>
+            ✅ Accept appointments{'\n'}
+            ✅ Manage your schedule{'\n'}
+            ✅ Receive payments{'\n'}
+            ✅ Chat with barbers{'\n'}
+            ✅ Message Board
+          </Text>
         </View>
       )}
       
@@ -175,13 +179,14 @@ const ProfileSetupScreen = () => {
         disabled={loading}
       >
         <Text style={styles.buttonText}>
-          {loading ? 'Saving...' : 'Save Profile'}
+          {loading ? (isBarber ? 'Setting up subscription...' : 'Saving...') : (isBarber ? 'Subscribe & Continue' : 'Save Profile')}
         </Text>
       </TouchableOpacity>
     </ScrollView>
   );
 };
 
+// Update styles to remove credit card fields
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
@@ -229,7 +234,12 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 15,
+    marginBottom: 10,
+  },
+  featuresText: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
   },
   button: {
     backgroundColor: '#2196F3',

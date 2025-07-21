@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   StyleSheet,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { getFirestore, collection, doc, updateDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -87,34 +88,52 @@ export default function NotificationScreen() {
   }
 
   return (
-    <FlatList
-      data={notifications}
-      keyExtractor={(item) => item.id}
-      contentContainerStyle={styles.container}
-      renderItem={({ item }) => (
-        <TouchableOpacity
-          style={[styles.notification, !item.read && styles.unread]}
-          onPress={() => markAsRead(item.id)}
-        >
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.body}>{item.body}</Text>
-          {item.appointmentDate && item.appointmentTime && (
-            <Text style={styles.appointmentInfo}>
-              Appointment: {item.appointmentDate} at {item.appointmentTime}
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Notifications</Text>
+      </View>
+      <FlatList
+        data={notifications}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContainer}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={[styles.notification, !item.read && styles.unread]}
+            onPress={() => markAsRead(item.id)}
+          >
+            <Text style={styles.title}>{item.title}</Text>
+            <Text style={styles.body}>{item.body}</Text>
+            {item.appointmentDate && item.appointmentTime && (
+              <Text style={styles.appointmentInfo}>
+                Appointment: {item.appointmentDate} at {item.appointmentTime}
+              </Text>
+            )}
+            <Text style={styles.timestamp}>
+              {moment(item.timestamp?.toDate()).fromNow()}
             </Text>
-          )}
-          <Text style={styles.timestamp}>
-            {moment(item.timestamp?.toDate()).fromNow()}
-          </Text>
-        </TouchableOpacity>
-      )}
-    />
+          </TouchableOpacity>
+        )}
+      />
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
+    padding: 20,
+    paddingBottom: 40,
+    backgroundColor: '#fff',
+  },
+  header: {
+    paddingTop: 48, // Adjust for desired spacing
+    paddingBottom: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
   centered: {
     flex: 1,

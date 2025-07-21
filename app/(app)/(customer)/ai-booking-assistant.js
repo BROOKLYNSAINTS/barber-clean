@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { assistWithAppointmentBooking } from '@/services/openai'; // Adjusted path
 //import { getBarberAvailability, auth } from '@/services/firebase'; // Adjusted path
-import { getBarberAvailability } from '@/services/firebase'; // Adjusted path
-
+import { getBarberAvailability, createAppointment, getUserProfile } from '@/services/firebase';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
 const AIBookingAssistantScreen = () => {
@@ -107,27 +107,46 @@ const AIBookingAssistantScreen = () => {
     }
   };
 
-  const handleContinue = () => {
-    if (!selectedDate || !selectedSlot) {
-      Alert.alert('Selection Required', 'Please select both date and time for your appointment.');
+const handleContinue = async () => {
+  if (!selectedDate || !selectedSlot) {
+    Alert.alert('Selection Required', 'Please select both date and time for your appointment.');
+    return;
+  }
+  if (!barber || !service) {
+    Alert.alert('Error', 'Barber or Service details are missing.');
+    return;
+  }
+
+  try {
+    const customerId = auth.currentUser?.uid;
+    if (!customerId) {
+      Alert.alert('Error', 'User not logged in.');
       return;
     }
-    if (!barber || !service) {
-        Alert.alert('Error', 'Barber or Service details are missing.');
-        return;
-    }
 
-    // Navigate to the actual booking screen, passing all necessary data
-    router.push({
-      pathname: '/(app)/(customer)/book-appointment', // Corrected path
-      params: {
-        barber: JSON.stringify(barber),
-        service: JSON.stringify(service),
-        preselectedDate: selectedDate, // Pass selected date
-        preselectedTime: selectedSlot    // Pass selected time
-      }
+    const customerProfile = await getUserProfile(customerId);
+
+    await createAppointment({
+      customerId,
+      customerName: customerProfile?.name || 'Unknown',
+      barberId: barber.id,
+      barberName: barber.name,
+      serviceId: service.id,
+      serviceName: service.name,
+      date: selectedDate,
+      time: selectedSlot,
+      price: service.price,
+      duration: service.duration,
+      createdAt: new Date().toISOString(),
     });
-  };
+
+    Alert.alert('Success', 'Your appointment has been booked.');
+    router.replace('/(app)/(customer)/appointments'); // or confirmation screen
+  } catch (error) {
+    console.error('❌ Failed to book appointment:', error);
+    Alert.alert('Error', 'Failed to book appointment. Please try again.');
+  }
+};
 
   const generateDates = () => {
     const datesArray = [];
@@ -167,163 +186,165 @@ const AIBookingAssistantScreen = () => {
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>AI Booking Assistant</Text>
-        <Text style={styles.subtitle}>
-          Tell us your preferences, and our AI will help you find the perfect appointment time.
-        </Text>
-      </View>
-
-      <View style={styles.serviceInfoCard}>
-        <Text style={styles.serviceInfoTitle}>Booking For</Text>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Barber:</Text>
-          <Text style={styles.serviceInfoValue}>{barber.name}</Text>
-        </View>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Service:</Text>
-          <Text style={styles.serviceInfoValue}>{service.name}</Text>
-        </View>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Duration:</Text>
-          <Text style={styles.serviceInfoValue}>{service.duration} min</Text>
-        </View>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Price:</Text>
-          <Text style={styles.serviceInfoValue}>${service.price.toFixed(2)}</Text>
-        </View>
-      </View>
-
-      <View style={styles.dateSelectionSection}>
-        <Text style={styles.sectionTitle}>1. Select a Date</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.datesContainer}
-        >
-          {dates.map((date) => (
-            <TouchableOpacity
-              key={date.dateString}
-              style={[
-                styles.dateOption,
-                selectedDate === date.dateString && styles.selectedDateOption
-              ]}
-              onPress={() => handleDateSelect(date.dateString)}
-            >
-              <Text style={[
-                styles.dayName,
-                selectedDate === date.dateString && styles.selectedDateText
-              ]}>
-                {date.dayName}
-              </Text>
-              <Text style={[
-                styles.dayNumber,
-                selectedDate === date.dateString && styles.selectedDateText
-              ]}>
-                {date.dayNumber}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {selectedDate && (
-        <View style={styles.aiInputSection}>
-          <Text style={styles.sectionTitle}>2. Tell AI Your Preferences (Optional)</Text>
-          <Text style={styles.sectionSubtitle}>
-            e.g., "afternoon", "not too early", "around lunch time"
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>AI Booking Assistant</Text>
+          <Text style={styles.subtitle}>
+            Tell us your preferences, and our AI will help you find the perfect appointment time.
           </Text>
-          <TextInput
-            style={styles.preferenceInput}
-            value={userInput}
-            onChangeText={setUserInput}
-            placeholder="Enter your time preferences..."
-            multiline
-          />
-          <TouchableOpacity 
-            style={[styles.askAiButton, (processingRequest || loading || availableSlots.length === 0) && styles.disabledButton]}
-            onPress={handleAskAI}
-            disabled={processingRequest || loading || availableSlots.length === 0}
+        </View>
+
+        <View style={styles.serviceInfoCard}>
+          <Text style={styles.serviceInfoTitle}>Booking For</Text>
+          <View style={styles.serviceInfoRow}>
+            <Text style={styles.serviceInfoLabel}>Barber:</Text>
+            <Text style={styles.serviceInfoValue}>{barber.name}</Text>
+          </View>
+          <View style={styles.serviceInfoRow}>
+            <Text style={styles.serviceInfoLabel}>Service:</Text>
+            <Text style={styles.serviceInfoValue}>{service.name}</Text>
+          </View>
+          <View style={styles.serviceInfoRow}>
+            <Text style={styles.serviceInfoLabel}>Duration:</Text>
+            <Text style={styles.serviceInfoValue}>{service.duration} min</Text>
+          </View>
+          <View style={styles.serviceInfoRow}>
+            <Text style={styles.serviceInfoLabel}>Price:</Text>
+            <Text style={styles.serviceInfoValue}>${service.price.toFixed(2)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.dateSelectionSection}>
+          <Text style={styles.sectionTitle}>1. Select a Date</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.datesContainer}
           >
-            {processingRequest ? (
-              <ActivityIndicator size="small" color="#fff" />
+            {dates.map((date) => (
+              <TouchableOpacity
+                key={date.dateString}
+                style={[
+                  styles.dateOption,
+                  selectedDate === date.dateString && styles.selectedDateOption
+                ]}
+                onPress={() => handleDateSelect(date.dateString)}
+              >
+                <Text style={[
+                  styles.dayName,
+                  selectedDate === date.dateString && styles.selectedDateText
+                ]}>
+                  {date.dayName}
+                </Text>
+                <Text style={[
+                  styles.dayNumber,
+                  selectedDate === date.dateString && styles.selectedDateText
+                ]}>
+                  {date.dayNumber}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {selectedDate && (
+          <View style={styles.aiInputSection}>
+            <Text style={styles.sectionTitle}>2. Tell AI Your Preferences (Optional)</Text>
+            <Text style={styles.sectionSubtitle}>
+              e.g., "afternoon", "not too early", "around lunch time"
+            </Text>
+            <TextInput
+              style={styles.preferenceInput}
+              value={userInput}
+              onChangeText={setUserInput}
+              placeholder="Enter your time preferences..."
+              multiline
+            />
+            <TouchableOpacity 
+              style={[styles.askAiButton, (processingRequest || loading || availableSlots.length === 0) && styles.disabledButton]}
+              onPress={handleAskAI}
+              disabled={processingRequest || loading || availableSlots.length === 0}
+            >
+              {processingRequest ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="bulb-outline" size={20} color="#fff" style={styles.buttonIcon} />
+                  <Text style={styles.askAiButtonText}>Ask AI for Suggestions</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {selectedDate && (
+          <View style={styles.timeSelectionSection}>
+            <Text style={styles.sectionTitle}>3. Select an Available Time</Text>
+            {loading ? (
+              <View style={styles.centered}>
+                <ActivityIndicator size="small" color="#2196F3" />
+                <Text style={styles.loadingText}>Loading available times...</Text>
+              </View>
+            ) : error && availableSlots.length === 0 ? (
+              <View style={styles.centered}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : availableSlots.length === 0 && !error ? (
+              <View style={styles.centered}>
+                <Text style={styles.noSlotsText}>No available slots for this date.</Text>
+              </View>
             ) : (
               <>
-                <Ionicons name="bulb-outline" size={20} color="#fff" style={styles.buttonIcon} />
-                <Text style={styles.askAiButtonText}>Ask AI for Suggestions</Text>
+                {aiSuggestion && (
+                  <View style={styles.aiSuggestionContainer}>
+                    <View style={styles.aiSuggestionHeader}>
+                      <Ionicons name="bulb-outline" size={20} color="#1976D2" />
+                      <Text style={styles.aiSuggestionTitle}>AI Suggestion:</Text>
+                    </View>
+                    <Text style={styles.aiSuggestionText}>{aiSuggestion.explanation}</Text>
+                  </View>
+                )}
+                <View style={styles.timeSlotsContainer}>
+                  {availableSlots.map((time) => (
+                    <TouchableOpacity
+                      key={time}
+                      style={[
+                        styles.timeSlot,
+                        selectedSlot === time && styles.selectedTimeSlot,
+                        aiSuggestion?.suggestedTime === time && styles.suggestedTimeSlot
+                      ]}
+                      onPress={() => handleTimeSelect(time)}
+                    >
+                      <Text style={[
+                        styles.timeSlotText,
+                        selectedSlot === time && styles.selectedTimeSlotText
+                      ]}>
+                        {time}
+                      </Text>
+                      {aiSuggestion?.suggestedTime === time && (
+                        <Ionicons name="star" size={12} color="#FFC107" style={styles.starIcon} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </>
             )}
-          </TouchableOpacity>
-        </View>
-      )}
+          </View>
+        )}
 
-      {selectedDate && (
-        <View style={styles.timeSelectionSection}>
-          <Text style={styles.sectionTitle}>3. Select an Available Time</Text>
-          {loading ? (
-            <View style={styles.centered}>
-              <ActivityIndicator size="small" color="#2196F3" />
-              <Text style={styles.loadingText}>Loading available times...</Text>
-            </View>
-          ) : error && availableSlots.length === 0 ? (
-            <View style={styles.centered}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : availableSlots.length === 0 && !error ? (
-            <View style={styles.centered}>
-              <Text style={styles.noSlotsText}>No available slots for this date.</Text>
-            </View>
-          ) : (
-            <>
-              {aiSuggestion && (
-                <View style={styles.aiSuggestionContainer}>
-                  <View style={styles.aiSuggestionHeader}>
-                    <Ionicons name="bulb-outline" size={20} color="#1976D2" />
-                    <Text style={styles.aiSuggestionTitle}>AI Suggestion:</Text>
-                  </View>
-                  <Text style={styles.aiSuggestionText}>{aiSuggestion.explanation}</Text>
-                </View>
-              )}
-              <View style={styles.timeSlotsContainer}>
-                {availableSlots.map((time) => (
-                  <TouchableOpacity
-                    key={time}
-                    style={[
-                      styles.timeSlot,
-                      selectedSlot === time && styles.selectedTimeSlot,
-                      aiSuggestion?.suggestedTime === time && styles.suggestedTimeSlot
-                    ]}
-                    onPress={() => handleTimeSelect(time)}
-                  >
-                    <Text style={[
-                      styles.timeSlotText,
-                      selectedSlot === time && styles.selectedTimeSlotText
-                    ]}>
-                      {time}
-                    </Text>
-                    {aiSuggestion?.suggestedTime === time && (
-                      <Ionicons name="star" size={12} color="#FFC107" style={styles.starIcon} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          )}
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={[
-          styles.continueButton,
-          (!selectedDate || !selectedSlot || loading || processingRequest) && styles.disabledButton
-        ]}
-        onPress={handleContinue}
-        disabled={!selectedDate || !selectedSlot || loading || processingRequest}
-      >
-        <Text style={styles.continueButtonText}>Continue to Booking</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <TouchableOpacity
+          style={[
+            styles.continueButton,
+            (!selectedDate || !selectedSlot || loading || processingRequest) && styles.disabledButton
+          ]}
+          onPress={handleContinue}
+          disabled={!selectedDate || !selectedSlot || loading || processingRequest}
+        >
+          <Text style={styles.continueButtonText}>Continue to Booking</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
@@ -333,11 +354,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   header: {
-    padding: 20,
-    backgroundColor: '#f5f5f5',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
+    paddingTop: 16,
+    paddingBottom: 8,
+    backgroundColor: '#fff',
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2196F3',
   },
   title: {
     fontSize: 22,
