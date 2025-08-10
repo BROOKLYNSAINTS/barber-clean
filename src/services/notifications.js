@@ -7,11 +7,17 @@ import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, serv
 import * as Calendar from 'expo-calendar';
 
 export async function requestPermissions() {
-  await Notifications.requestPermissionsAsync();
-  if (Platform.OS === 'ios') {
-    await Calendar.requestCalendarPermissionsAsync();
-  } else {
-    await Calendar.requestPermissionsAsync();
+  try {
+    const notifStatus = await Notifications.requestPermissionsAsync();
+    console.log('[Permissions] Notifications:', notifStatus);
+  } catch (e) {
+    console.warn('[Permissions] Notifications request failed', e);
+  }
+  try {
+    const calStatus = await Calendar.requestCalendarPermissionsAsync();
+    console.log('[Permissions] Calendar:', calStatus);
+  } catch (e) {
+    console.warn('[Permissions] Calendar request failed', e);
   }
 }
 
@@ -71,23 +77,22 @@ export async function addAppointmentToCalendar(appointment, service = null, barb
 
   // Sanitize and convert time to 24-hour format
   const time24 = to24Hour(appointment.time);
-  // Combine date and time in ISO format
   const startDateStr = `${appointment.date}T${time24}:00`;
   const startDate = new Date(startDateStr);
+
   if (isNaN(startDate.getTime())) {
     console.error('Invalid startDate:', { startDateStr, appointment });
     throw new RangeError('Date value out of bounds');
   }
-  
-  // Use service duration if available, otherwise default to 30 minutes
+
   const duration = (service && service.duration) || 30;
   const endDate = new Date(startDate.getTime() + duration * 60000);
 
-  // Use data from appointment object if service/barber objects are not provided
+  // ✅ Fallbacks now check appointment.barberAddress and barberPhone
   const serviceName = (service && service.name) || appointment.serviceName || 'Appointment';
   const barberName = (barber && barber.name) || appointment.barberName || 'Barber';
-  const barberAddress = (barber && barber.address) || '';
-  const barberPhone = (barber && barber.phone) || '';
+  const barberAddress = (barber && barber.address) || appointment.barberAddress || '';
+  const barberPhone = (barber && barber.phone) || appointment.barberPhone || '';
 
   const eventId = await Calendar.createEventAsync(defaultCalendar.id, {
     title: `${serviceName} with ${barberName}`,
@@ -103,10 +108,12 @@ export async function addAppointmentToCalendar(appointment, service = null, barb
 // Configure notifications
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
+    shouldShowAlert: true,          // iOS classic
     shouldPlaySound: true,
     shouldSetBadge: true,
+    // keep new fields if SDK supports them:
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -236,14 +243,15 @@ export const saveNotificationToFirestore = async (userId, notification) => {
     
     console.log('📤 Saving notification to Firestore:', { userId, notification });
     
-    const notificationRef = doc(db, 'users', userId, 'notifications', notification.id || String(Date.now()));
-    await setDoc(notificationRef, {
-      ...notification,
-      timestamp: new Date(),
-      read: false,
-    });
+const notificationRef = doc(db, 'users', userId, 'notifications', notification.id || String(Date.now()));
+
+await setDoc(notificationRef, {
+  ...notification,
+  timestamp: new Date(),
+  read: false,
+});
     
-    console.log('✅ Notification saved to Firestore successfully:', notification.id);
+    console.log('✅ Notification saved to Firestore successfully:', notification);
   } catch (error) {
     console.error('❌ Error saving notification to Firestore:', error);
   }
@@ -251,221 +259,182 @@ export const saveNotificationToFirestore = async (userId, notification) => {
 
 // Schedule appointment reminder (Hybrid: Local + Firestore)
 export const scheduleAppointmentReminder = async (appointment, userId) => {
+  const { date, serviceName, barberName } = appointment;
+  const appointmentId = appointment.id || appointment.appointmentId;
+  console.log('appointment:', appointment);
+  console.log('appointmentId:', appointmentId);
+  console.log('userId:', userId);
   try {
-    const { date, serviceName, barberName } = appointment;
     const startTime = appointment.startTime || appointment.time;
     if (!date || !startTime) throw new Error('Missing date or time');
-
-    // Use robust date/time parsing
     const appointmentDate = getAppointmentDate(date, startTime);
-    const oneDayBefore = new Date(appointmentDate.getTime());
-    oneDayBefore.setDate(oneDayBefore.getDate() - 1);
-    const oneHourBefore = new Date(appointmentDate.getTime());
-    oneHourBefore.setHours(oneHourBefore.getHours() - 1);
+    const oneDayBefore = new Date(appointmentDate.getTime() - 24*60*60*1000);
+    const oneHourBefore = new Date(appointmentDate.getTime() - 60*60*1000);
 
-    console.log('[Reminder Debug] appointmentDate:', appointmentDate);
-    console.log('[Reminder Debug] oneDayBefore:', oneDayBefore, 'now:', new Date());
-    console.log('[Reminder Debug] oneHourBefore:', oneHourBefore, 'now:', new Date());
-
-    // Schedule 24-hour reminder
     if (oneDayBefore > new Date()) {
-      console.log('[Reminder Debug] Scheduling 1-day reminder for:', oneDayBefore);
-      
-      // Schedule local notification
       const oneDayId = await Notifications.scheduleNotificationAsync({
         content: {
           title: 'Appointment Reminder',
           body: `You have a ${serviceName} appointment with ${barberName} on ${date} at ${startTime}.`,
           sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-          data: { type: 'appointment_reminder', appointmentId: appointment.id },
+          ...(Platform.OS === 'android' ? { priority: Notifications.AndroidNotificationPriority.HIGH } : {}),
+          data: { type: 'appointment_reminder', appointmentId }
         },
-        trigger: { date: oneDayBefore },
+        trigger: { date: oneDayBefore }
       });
-      
-      // Save to Firestore for notification history
       if (userId) {
         await saveNotificationToFirestore(userId, {
-          id: `reminder_24h_${appointment.id}`,
+          id: `reminder_24h_${appointmentId}`,
           title: '24-Hour Reminder Set',
-          body: `A reminder has been set for 24 hours before your appointment on ${date} at ${startTime}.`,
+          body: `Reminder set for 24 hours before ${date} at ${startTime}.`,
           type: 'appointment_reminder',
-          appointmentId: appointment.id,
+          appointmentId,
           appointmentDate: date,
           appointmentTime: startTime,
-          serviceName: serviceName,
-          barberName: barberName,
-          localNotificationId: oneDayId,
+          serviceName,
+          barberName,
+          localNotificationId: oneDayId
         });
       }
-      
-      console.log('[Reminder Debug] 1-day reminder scheduled with ID:', oneDayId);
     }
-    
-    // Schedule 1-hour reminder
+
     if (oneHourBefore > new Date()) {
-      console.log('[Reminder Debug] Scheduling 1-hour reminder for:', oneHourBefore);
-      
-      // Schedule local notification
       const oneHourId = await Notifications.scheduleNotificationAsync({
         content: {
           title: 'Upcoming Appointment',
           body: `Your ${serviceName} appointment with ${barberName} is on ${date} at ${startTime}.`,
           sound: true,
-          priority: Notifications.AndroidNotificationPriority.HIGH,
-          data: { type: 'appointment_reminder', appointmentId: appointment.id },
+          ...(Platform.OS === 'android' ? { priority: Notifications.AndroidNotificationPriority.HIGH } : {}),
+          data: { type: 'appointment_reminder', appointmentId }
         },
-        trigger: { date: oneHourBefore },
+        trigger: { date: oneHourBefore }
       });
-      
-      // Save to Firestore for notification history
       if (userId) {
         await saveNotificationToFirestore(userId, {
-          id: `reminder_1h_${appointment.id}`,
+          id: `reminder_1h_${appointmentId}`,
           title: '1-Hour Reminder Set',
-          body: `A reminder has been set for 1 hour before your appointment on ${date} at ${startTime}.`,
+          body: `Reminder set for 1 hour before ${date} at ${startTime}.`,
           type: 'appointment_reminder',
-          appointmentId: appointment.id,
+          appointmentId,
           appointmentDate: date,
           appointmentTime: startTime,
-          serviceName: serviceName,
-          barberName: barberName,
-          localNotificationId: oneHourId,
+          serviceName,
+          barberName,
+          localNotificationId: oneHourId
         });
       }
-      
-      console.log('[Reminder Debug] 1-hour reminder scheduled with ID:', oneHourId);
     }
+    return true;
   } catch (error) {
     console.error('[Reminder Debug] Error scheduling appointment reminder:', error);
+    return false;
   }
 };
 
-// Cancel all scheduled notifications
-export const cancelAllNotifications = async () => {
+export const cancelAppointmentNotifications = async (appointmentOrId, userId) => {
   try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  } catch (error) {
-    console.error('Error canceling notifications:', error);
-  }
-};
-
-// Cancel notifications for a specific appointment
-export const cancelAppointmentNotifications = async (appointmentId, userId) => {
-  try {
+    const appointmentId = typeof appointmentOrId === 'string'
+      ? appointmentOrId
+      : appointmentOrId?.id || appointmentOrId?.appointmentId || null;
+    if (!appointmentId) {
+      console.warn('[Cancel Notifications] Missing appointmentId');
+      return { success:false, cancelledCount:0 };
+    }
     console.log('[Cancel Notifications] Cancelling notifications for appointment:', appointmentId);
-    
-    // Get all scheduled notifications to find ones for this appointment
-    const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
-    console.log('[Cancel Notifications] Found scheduled notifications:', scheduledNotifications.length);
-    
-    // Cancel notifications that match this appointment
+
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    console.log('[Cancel Notifications] Found scheduled notifications:', scheduled.length);
+
     let cancelledCount = 0;
-    for (const notification of scheduledNotifications) {
-      if (notification.content?.data?.appointmentId === appointmentId) {
-        await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+    for (const n of scheduled) {
+      if (n?.content?.data?.appointmentId === appointmentId) {
+        await Notifications.cancelScheduledNotificationAsync(n.identifier);
         cancelledCount++;
-        console.log('[Cancel Notifications] Cancelled notification:', notification.identifier);
+        console.log('[Cancel Notifications] Cancelled notification:', n.identifier);
       }
     }
-    
-    // Also remove from Firestore notifications if we have userId
+
     if (userId) {
       try {
         const notificationsRef = collection(db, 'users', userId, 'notifications');
-        const q = query(notificationsRef, where('appointmentId', '==', appointmentId));
-        const snapshot = await getDocs(q);
-        
-        for (const docSnapshot of snapshot.docs) {
-          // Update to show as cancelled rather than deleting
-          await updateDoc(docSnapshot.ref, {
+        const qRef = query(notificationsRef, where('appointmentId','==', appointmentId));
+        const snap = await getDocs(qRef);
+        for (const d of snap.docs) {
+          await updateDoc(d.ref, {
             status: 'cancelled',
             cancelledAt: serverTimestamp()
           });
         }
-        
-        console.log('[Cancel Notifications] Updated Firestore notifications:', snapshot.size);
-      } catch (error) {
-        console.error('[Cancel Notifications] Error updating Firestore notifications:', error);
+        console.log('[Cancel Notifications] Updated Firestore notifications:', snap.size);
+      } catch (e) {
+        console.error('[Cancel Notifications] Firestore update error:', e);
       }
     }
-    
+
     console.log(`✅ Cancelled ${cancelledCount} scheduled notifications for appointment ${appointmentId}`);
-    return { success: true, cancelledCount };
-  } catch (error) {
-    console.error('❌ Error cancelling appointment notifications:', error);
-    throw error;
+    return { success:true, cancelledCount };
+  } catch (e) {
+    console.error('❌ Error cancelling appointment notifications:', e);
+    return { success:false, cancelledCount:0, error:e.message };
   }
 };
 
-// Remove appointment from calendar
-export const removeAppointmentFromCalendar = async (appointment) => {
+export const removeAppointmentFromCalendar = async (appointmentOrId) => {
   try {
-    console.log('[Calendar] Removing appointment from calendar:', appointment.id);
-    
-    // Get calendar permissions first
+    const appt = typeof appointmentOrId === 'string' ? { id: appointmentOrId } : (appointmentOrId || {});
+    const appointmentId = appt.id || appt.appointmentId || null;
+    console.log('[Calendar] Removing appointment from calendar:', appointmentId);
+
     const { status } = await Calendar.requestCalendarPermissionsAsync();
     if (status !== 'granted') {
       console.warn('[Calendar] Calendar permission not granted');
-      return { success: false, reason: 'Permission denied' };
+      return { success:false, reason:'permission' };
     }
 
-    // Get all calendars
     const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-    console.log('[Calendar] Found calendars:', calendars.length);
-
-    // Look for events that match our appointment
-    const endDate = new Date();
-    endDate.setFullYear(endDate.getFullYear() + 1); // Search next year
-    
-    const startDate = new Date();
-    startDate.setFullYear(startDate.getFullYear() - 1); // Search past year
+    const endDate = new Date(); endDate.setFullYear(endDate.getFullYear() + 1);
+    const startDate = new Date(); startDate.setFullYear(startDate.getFullYear() - 1);
 
     let removedCount = 0;
-    
     for (const calendar of calendars) {
+      let events = [];
       try {
-        const events = await Calendar.getEventsAsync([calendar.id], startDate, endDate);
-        
-        // Find events that match our appointment
-        for (const event of events) {
-          // Match by title and date (since we don't store calendar event IDs)
-          const appointmentTitle = `${appointment.serviceName} with ${appointment.barberName}`;
-          
-          if (event.title === appointmentTitle || 
-              event.title.includes(appointment.serviceName) && event.title.includes(appointment.barberName)) {
-            
-            // Additional check: match the date
-            const eventDate = new Date(event.startDate);
-            const appointmentDateStr = appointment.date; // Should be YYYY-MM-DD format
-            
-            if (appointmentDateStr) {
-              const [year, month, day] = appointmentDateStr.split('-').map(Number);
-              const appointmentCalendarDate = new Date(year, month - 1, day);
-              
-              // Check if dates match (same day)
-              if (eventDate.getFullYear() === appointmentCalendarDate.getFullYear() &&
-                  eventDate.getMonth() === appointmentCalendarDate.getMonth() &&
-                  eventDate.getDate() === appointmentCalendarDate.getDate()) {
-                
-                console.log('[Calendar] Removing matching event:', event.title, event.startDate);
-                await Calendar.deleteEventAsync(event.id);
-                removedCount++;
-              }
-            }
-          }
+        events = await Calendar.getEventsAsync([calendar.id], startDate, endDate);
+      } catch {
+        continue;
+      }
+      for (const ev of events) {
+        if (!ev.title) continue;
+        const serviceName = appt.serviceName;
+        const barberName = appt.barberName;
+        if (serviceName && barberName) {
+          const titleExact = `${serviceName} with ${barberName}`;
+          const looseMatch = ev.title.includes(serviceName) && ev.title.includes(barberName);
+          if (!(ev.title === titleExact || looseMatch)) continue;
         }
-      } catch (error) {
-        console.warn('[Calendar] Error searching calendar:', calendar.title, error);
+        if (appt.date) {
+          const [y,m,d] = appt.date.split('-').map(Number);
+          const apptDate = new Date(y,m-1,d);
+          const evDate = new Date(ev.startDate);
+          const sameDay = evDate.getFullYear()===apptDate.getFullYear() &&
+                          evDate.getMonth()===apptDate.getMonth() &&
+                          evDate.getDate()===apptDate.getDate();
+          if (!sameDay) continue;
+        }
+        try {
+          await Calendar.deleteEventAsync(ev.id);
+          removedCount++;
+          console.log('[Calendar] Deleted event:', ev.title);
+        } catch(e){
+          console.warn('[Calendar] delete failed', e);
+        }
       }
     }
-    
-    console.log(`✅ Removed ${removedCount} calendar events for appointment`);
-    return { success: true, removedCount };
-    
+    console.log(`✅ Removed ${removedCount} calendar events (scan)`);
+    return { success:true, removedCount };
   } catch (error) {
     console.error('❌ Error removing appointment from calendar:', error);
-    return { success: false, error: error.message };
+    return { success:false, error:error.message };
   }
 };
 
@@ -511,7 +480,7 @@ export const createTestNotification = async (userId) => {
 // Test function to schedule immediate reminders (for testing purposes)
 export const scheduleTestReminder = async (appointment, userId, testDelaySeconds = 10) => {
   try {
-    const { serviceName, barberName, date, time } = appointment;
+    const { serviceName, barberName, date, time,id } = appointment;
     const startTime = appointment.startTime || time;
     
     console.log(`🧪 Scheduling test reminder in ${testDelaySeconds} seconds...`);
@@ -552,6 +521,24 @@ export const scheduleTestReminder = async (appointment, userId, testDelaySeconds
   }
 };
 
+// ADD (if missing) after other exports, before default export:
+export const cancelAllNotifications = async () => {
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    for (const n of scheduled) {
+      await Notifications.cancelScheduledNotificationAsync(n.identifier);
+    }
+    if (Platform.OS === 'ios') {
+      try { await Notifications.setBadgeCountAsync(0); } catch {}
+    }
+    console.log(`[Notifications] Cleared ${scheduled.length} scheduled notifications`);
+    return scheduled.length;
+  } catch (e) {
+    console.error('Error cancelling all notifications:', e);
+    return 0;
+  }
+};
+
 export default {
   requestPermissions,
   addAppointmentToCalendar,
@@ -568,6 +555,5 @@ export default {
   addNotificationListener,
   addNotificationResponseListener,
   createTestNotification,
-  scheduleTestReminder,
   removeAppointmentFromCalendar
 };
