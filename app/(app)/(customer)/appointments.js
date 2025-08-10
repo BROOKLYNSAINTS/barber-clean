@@ -115,7 +115,9 @@ const AppointmentsScreen = () => {
           
           <View style={styles.detailRow}>
             <Ionicons name="cash-outline" size={16} color="#666" style={styles.detailIcon} />
-            <Text style={styles.detailText}>${item.servicePrice.toFixed(2)}</Text>
+          <Text style={styles.detailText}>
+            {item.servicePrice != null ? `$${item.servicePrice.toFixed(2)}` : 'No price'}
+          </Text>
           </View>
         </View>
         

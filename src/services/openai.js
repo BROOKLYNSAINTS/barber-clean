@@ -5,15 +5,31 @@ import Constants from 'expo-constants';
 const API_KEY = Constants.expoConfig?.extra?.OPENAI_API_KEY;
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
 
-export const generateChatResponse = async (text, context = []) => {
+export const generateChatResponse = async (text = '', context = []) => {
   if (!API_KEY) {
     console.error("❌ Missing OpenAI API Key");
     return { success: false, error: "Missing API key" };
   }
 
+  const systemMessage = {
+    role: 'system',
+    content: `You are a helpful assistant for a barbershop app. 
+    Do not say "appointment is booked" unless you are explicitly told it was booked. 
+    Instead, ask the user to confirm the time, and wait for the app to process the appointment.`
+  };
+
+  // ✅ Safely format context into valid message objects
+  const formattedContext = Array.isArray(context)
+    ? context.map(item =>
+        typeof item === 'string'
+          ? { role: 'user', content: item }
+          : item
+      )
+    : [];
+
   const messages = [
-    { role: 'system', content: 'You are a helpful AI assistant for a barbershop.' },
-    ...context,
+    systemMessage,
+    ...formattedContext,
     { role: 'user', content: text },
   ];
 
@@ -37,7 +53,6 @@ export const generateChatResponse = async (text, context = []) => {
     if (data.choices && data.choices.length > 0) {
       const content = data.choices[0].message.content.trim();
       console.log("🧪 Full OpenAI response:", JSON.stringify(data, null, 2));
-
       return { success: true, text: content };
     } else {
       console.error("❌ No choices returned:", data);

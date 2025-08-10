@@ -6,7 +6,7 @@ import {
   ActivityIndicator,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
+  SafeAreaView,
 } from 'react-native';
 import { useAuth } from '../../../src/contexts/AuthContext';
 import { getFirestore, collection, doc, updateDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
@@ -21,11 +21,6 @@ export default function NotificationScreen() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Set loading to false when component mounts
-  useEffect(() => {
-    setLoading(false);
-  }, []);
-
   useEffect(() => {
     if (!currentUser?.uid) return;
 
@@ -39,14 +34,12 @@ export default function NotificationScreen() {
         id: doc.id,
         ...doc.data(),
       }));
-      
-      // Filter out cancelled notifications
-      const activeNotifications = list.filter(notification => 
-        notification.status !== 'cancelled'
-      );
-      
+
+      const activeNotifications = list.filter(notification => notification.status !== 'cancelled');
+
       setNotifications(activeNotifications);
-      setLoading(false); // Set loading to false when data is received
+      setLoading(false);
+
       console.log('📬 Notifications updated:', activeNotifications.map(n => ({
         id: n.id,
         title: n.title,
@@ -79,7 +72,6 @@ export default function NotificationScreen() {
   }
 
   if (notifications.length === 0) {
-
     return (
       <View style={styles.centered}>
         <Text>No notifications yet.</Text>
@@ -88,7 +80,7 @@ export default function NotificationScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Notifications</Text>
       </View>
@@ -114,18 +106,21 @@ export default function NotificationScreen() {
           </TouchableOpacity>
         )}
       />
-    </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 20,
-    paddingBottom: 40,
+    flex: 1,
     backgroundColor: '#fff',
   },
+  listContainer: {
+    padding: 20,
+    paddingBottom: 40,
+  },
   header: {
-    paddingTop: 48, // Adjust for desired spacing
+    paddingTop: 48,
     paddingBottom: 12,
     alignItems: 'center',
     backgroundColor: '#fff',

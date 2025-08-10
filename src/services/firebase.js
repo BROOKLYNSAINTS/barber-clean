@@ -18,7 +18,9 @@ import {
   addDoc, 
   serverTimestamp,
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  orderBy,
+  limit
 } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
 
@@ -105,77 +107,75 @@ export const getBarberServices = async (barberId) => {
   return services;
 };
 
-export const getBarberAvailability = async (barberId, selectedDate) => {
-  const docRef = doc(db, 'users', barberId);
-  const docSnap = await getDoc(docRef);
-  if (!docSnap.exists()) {
-    console.error('No such barber document!');
+
+export const getBarberAvailability = async (barberId) => {
+  const userRef = doc(db, 'users', barberId);
+  const userSnap = await getDoc(userRef);
+
+  if (!userSnap.exists()) {
+    console.log(`❌ No user found with ID ${barberId}`);
     return [];
   }
 
-  const barber = docSnap.data();
-  const { workingDays, workingHours, unavailableDates } = barber;
-  console.log('Barber workingDays:', workingDays, 'workingHours:', workingHours); 
-  console.log('Barber unavailableDates:', unavailableDates);  
+  const userData = userSnap.data();
+  const { workingDays, workingHours } = userData;
+  console.log('🗓️ Barber workingDays:', workingDays, 'workingHours:', workingHours);
 
-  if (!workingDays || !workingHours) {
-    console.error('Barber does not have working days or hours set');  
-    return [];
-  }
-  console.log('Barber workingDays:', workingDays, 'workingHours:', workingHours);
+  const today = new Date();
+  const availability = [];
 
-  if (Array.isArray(unavailableDates) && unavailableDates.includes(selectedDate)) {
-    console.error('Barber is unavailable on this date');
-    console.log('check to see if this is the spot job is failing:', unavailableDates);
-    return [];
-  }
+  for (let i = 0; i < 7; i++) {
+    const currentDate = new Date(today);
+    currentDate.setDate(today.getDate() + i);
+    const dayName = currentDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
 
-  // Safely parse selectedDate as local date to avoid UTC shift bug
-  console.log('check to see if this is the spot job is failing:', unavailableDates);
+    if (workingDays?.[dayName]) {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const start = parseTime(workingHours.start);
+      const end = parseTime(workingHours.end);
+      const interval = workingHours.interval || 30;
 
-  if (!selectedDate || typeof selectedDate !== 'string' || !selectedDate.includes('-')) {
-    console.log('Invalid selectedDate format:', selectedDate);
-    console.error('Invalid selectedDate format:', selectedDate);
-    return [];
-}
-  const [year, month, day] = selectedDate.split('-').map(Number);
-  if (isNaN(year) || isNaN(month) || isNaN(day)) return [];
-
-  const dateObj = new Date(year, month - 1, day);
-
-  const dayOfWeek = dateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-  if (!workingDays[dayOfWeek]) return [];
-
-  const slots = [];
-  const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-  const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-  const interval = workingHours.interval || 30;
-
-  let current = new Date(dateObj);
-  current.setHours(startHour, startMinute, 0, 0);
-
-  const end = new Date(dateObj);
-  end.setHours(endHour, endMinute, 0, 0);
-
-  while (current < end) {
-    const timeStr = current.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    });
-    slots.push(timeStr);
-    current.setMinutes(current.getMinutes() + interval);
+      for (let time = start; time < end; time += interval) {
+        availability.push({
+          date: dateStr,
+          time: formatTime(time)
+        });
+      }
+    }
   }
 
-  return slots;
+  console.log('📅 Computed Availability:', availability);
+  return availability;
 };
 
-export const createAppointment = async (data) => {
-  const docRef = await addDoc(collection(db, 'appointments'), {
-    ...data,
-    createdAt: serverTimestamp(),
-  });
+function parseTime(timeStr) {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+}
 
+function formatTime(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const dt = new Date();
+  dt.setHours(hours, minutes);
+  return dt.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+export async function createAppointment(data) {
+  try {
+    console.log("📝 Attempting to write appointment to Firestore:", data);
+    const docRef = await addDoc(collection(db, 'appointments'), data);
+    console.log("✅ Firestore appointment created with ID:", docRef.id);
+    return docRef.id;
+  } catch (err) {
+    console.error("❌ Failed to create appointment in Firestore:", err);
+    throw err;
+  }
+}
+export const getAppointmentsByBarber = async (barberId) => {
 return {
   ...docRef,  // if you're returning the ref manually
   id: docRef.id,
@@ -343,6 +343,109 @@ export const deleteAppointment = async (appointmentId) => {
     throw error;
   }
 };
+export const scheduleAppointmentReminder = async (appointment) => {
+  try {
+    const { date, time, customerId } = appointment;
+    const reminderTime = new Date(`${date}T${time}:00`);
+    reminderTime.setHours(reminderTime.getHours() - 1); // 1 hour before
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Appointment Reminder',
+        body: `You have an appointment scheduled for ${date} at ${time}.`,
+        data: { appointmentId: appointment.id }
+      },
+      trigger: reminderTime
+    });
+
+    console.log('✅ Appointment reminder scheduled:', reminderTime);
+  } catch (error) {
+    console.error('❌ Error scheduling appointment reminder:', error);
+  }
+};
+export const getLastAppointmentForUser = async (customerId) => {
+  try {
+    const appointmentsRef = collection(db, 'appointments');
+    const q = query(
+      appointmentsRef,
+      where('customerId', '==', customerId),
+      orderBy('createdAt', 'desc'),
+      limit(1)
+    );
+
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+    } else {
+      return null;
+    }
+  } catch (error) {
+    console.error('🔥 Error fetching last appointment:', error);
+    throw error;
+  }
+};
+
+export const getAppointmentByDateTime = async (userId, date, time) => {
+  try {
+    const appointmentsRef = collection(db, 'appointments');
+    const q = query(
+      appointmentsRef,
+      where('customerId', '==', userId),
+      where('date', '==', date),
+      where('time', '==', time)
+    );
+
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) {
+      return null;
+    }
+
+    // Assuming there's only one matching appointment
+    const doc = snapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
+  } catch (error) {
+    console.error('❌ Error fetching appointment by date/time:', error);
+    return null;
+  }
+};
+
+// Get all appointments for a user on a date
+export const getAppointmentsForUserDate = async (userId, date) => {
+  const q = query(
+    collection(db, 'appointments'),
+    where('customerId', '==', userId),
+    where('date', '==', date)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+// (Optional) list all user appointments for debugging
+export const listAllUserAppointments = async (userId) => {
+  const q = query(collection(db, 'appointments'), where('customerId','==',userId));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+// Add this helper (ensure imports at top include: collection, query, where, orderBy, limit, getDocs)
+export async function getRecentAppointmentsForUser(userId, count = 3) {
+  if (!userId) return [];
+  const qRef = query(
+    collection(db, 'appointments'),
+    where('customerId', '==', userId),
+    orderBy('createdAt', 'desc'),
+    limit(count)
+  );
+  const snap = await getDocs(qRef);
+  return snap.docs.map(d => {
+    const data = d.data();
+    return {
+      id: d.id,
+      ...data,
+      createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt
+    };
+  });
+}
 
 export {
   app,

@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, TextInput, Button, Text, ScrollView, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { generateChatResponse } from '@/services/openai';
-
+import Speech from 'expo-speech'; // Ensure you have this package installed 
 
 export default function ChatAssistantScreen() {
   const [input, setInput] = useState('');

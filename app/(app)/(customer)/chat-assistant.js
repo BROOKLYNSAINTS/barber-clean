@@ -1,251 +1,681 @@
-// ChatAssistantScreen (fixed intro, barber list, services with price)
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native'; // <-- add
 import {
-  View, TextInput, Button, Text, ScrollView, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator
+  SafeAreaView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  KeyboardAvoidingView,
+  ActivityIndicator,
+  Platform,
+  Button,
+  StyleSheet
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { generateChatResponse } from '@/services/openai';
-import { useAuth } from '@/contexts/AuthContext';
+import * as Speech from 'expo-speech';
 import {
-  createAppointment,
   getUserProfile,
-  getBarberAvailability,
   getBarbersByZipcode,
-  getBarberServices
+  getBarberServices,
+  getBarberAvailability,
+  createAppointment,
+  getLastAppointmentForUser,
+  cancelAppointment,
+  getRecentAppointmentsForUser   // <-- added
 } from '@/services/firebase';
 import {
   addAppointmentToCalendar,
-  scheduleAppointmentReminder
+  requestPermissions,
+  scheduleAppointmentReminder,
+  cancelAppointmentNotifications,
+  removeAppointmentFromCalendar
 } from '@/services/notifications';
-import * as Speech from 'expo-speech';
 import Waveform from '@/components/Waveform';
-import { useAutoStartRecording } from '@/services/googleSpeech';
+import { generateChatResponse } from '@/services/openai';
+import { useAuth } from '@/contexts/AuthContext';
+import { serverTimestamp } from 'firebase/firestore';
+
+// ---- ADD (or move) THESE HELPERS TO THE VERY TOP (after imports) ----
+function cleanSpaces(s=''){ return (s||'').replace(/[\u202F\u00A0]/g,' ').replace(/\s+/g,' ').trim(); }
+function normalizeDisplayTime(t=''){
+  t = cleanSpaces(t);
+  const m24 = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24 && +m24[1] <= 23){
+    let h = +m24[1]; const mins = m24[2]; const mer = h>=12?'PM':'AM';
+    if(h===0) h=12; else if(h>12) h-=12;
+    return `${h}:${mins} ${mer}`;
+  }
+  const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if(!m) return t;
+  return `${parseInt(m[1],10)}:${m[2]} ${m[3].toUpperCase()}`;
+}
+function toTime24(t=''){
+  const m = normalizeDisplayTime(t).match(/^(\d{1,2}):(\d{2})\s(AM|PM)$/);
+  if(!m) return null;
+  let h = +m[1]; const mins = m[2]; const mer = m[3];
+  if(mer==='PM' && h!==12) h+=12;
+  if(mer==='AM' && h===12) h=0;
+  return `${h.toString().padStart(2,'0')}:${mins}`;
+}
+function anyTo24(raw=''){
+  raw = cleanSpaces(raw);
+  let m = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if(m) return toTime24(`${m[1]}:${m[2]} ${m[3].toUpperCase()}`);
+  m = raw.match(/^(\d{1,2})\s*(AM|PM)$/i);
+  if(m) return toTime24(`${m[1]}:00 ${m[2].toUpperCase()}`);
+  m = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if(m && +m[1] <= 23) return `${m[1].padStart(2,'0')}:${m[2]}`;
+  return null;
+}
+function parseDayOffset(text=''){
+  const lower=text.toLowerCase();
+  if(lower.includes('today')) return 0;
+  if(lower.includes('tomorrow')) return 1;
+  const days=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+  const now=new Date(); const cur=now.getDay();
+  for(let i=0;i<days.length;i++){
+    if(lower.includes(days[i])){ let d=(i-cur+7)%7; if(d===0)d=7; return d; }
+  }
+  return null;
+}
+async function bookAppointment(appointment){
+  const display = normalizeDisplayTime(appointment.time);
+  const time24 = toTime24(display);
+  if(!time24) throw new Error('Invalid time');
+
+  // Optional unique key (uncomment if you need it elsewhere)
+  // const userDateTimeKey = `${appointment.customerId}_${appointment.date}_${time24}`;
+
+  const docData = {
+    ...appointment,
+    time: display,
+    time24,
+    // userDateTimeKey,
+    createdAt: serverTimestamp()
+  };
+
+  console.log('[BOOK] create', docData);
+  const id = await createAppointment(docData);
+  const full = { ...docData, id };
+
+  // Non-fatal side effects
+  try { await requestPermissions(); } catch(e){ console.log('[BOOK] perm warn', e); }
+  try { await addAppointmentToCalendar(full); } catch(e){ console.log('[BOOK] calendar warn', e); }
+  try { await scheduleAppointmentReminder(full, appointment.customerId); } catch(e){ console.log('[BOOK] reminder warn', e); }
+
+  return full;
+}
+// ---- END HELPERS ----
 
 export default function ChatAssistantScreen() {
   const { currentUser } = useAuth();
-  const [input, setInput] = useState('');
-  const [messages, setMessages] = useState([]);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [selectedBarber, setSelectedBarber] = useState(null);
-  const [selectedService, setSelectedService] = useState(null);
-  const [selectedTime, setSelectedTime] = useState(null);
-  const [availability, setAvailability] = useState([]);
-  const [barberList, setBarberList] = useState([]);
-const dayMap = {
-  sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
-  thursday: 4, friday: 5, saturday: 6
-};
+  const scrollRef = useRef(null);
+  const hasShownMenu = useRef(false);
 
-function parseDayOffset(text) {
-  const lower = text.toLowerCase();
-  if (lower.includes('today')) return 0;
-  if (lower.includes('tomorrow')) return 1;
-
-  const found = Object.keys(dayMap).find(d => lower.includes(d));
-  if (found !== undefined) {
-    const today = new Date().getDay();
-    const target = dayMap[found];
-    return (target + 7 - today) % 7 || 7;
+  if (!currentUser) {
+    return (
+      <SafeAreaView style={{ flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'#fff' }}>
+        <ActivityIndicator size="large" color="#007bff" />
+        <Text style={{ marginTop:12 }}>Loading user...</Text>
+      </SafeAreaView>
+    );
   }
 
-  return null;
-}
-  const scrollRef = useRef();
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [pendingDateTime, setPendingDateTime] = useState(null);
+  const [bookingStep, setBookingStep] = useState('idle');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showMenu, setShowMenu] = useState(true);
+  const [mode, setMode] = useState(null);
+  const [newStep, setNewStep] = useState('idle');
+  const [barbersCache, setBarbersCache] = useState([]);
+  const [servicesCache, setServicesCache] = useState([]);
+  const [selectedBarber, setSelectedBarber] = useState(null);
+  const [selectedService, setSelectedService] = useState(null);
+  const [selectedPrice, setSelectedPrice] = useState(null);
+  const [selectedTime, setSelectedTime] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const [barbers, setBarbers] = useState([]);
+  const [services, setServices] = useState([]);
+  const [pendingCancel, setPendingCancel] = useState(null);
+  const [cancelStage, setCancelStage] = useState('idle'); // idle | list | confirm
+  const [recentAppointments, setRecentAppointments] = useState([]);
+  const [cancelPick, setCancelPick] = useState(null);
+  const [lastAppointment, setLastAppointment] = useState(null);
 
-  useEffect(() => {
-    addBotMessage("Hi there! I'm your barber assistant. Ask me anything or say 'book an appointment' to get started.");
+  const parseNumberChoice = (text) => {
+    if (typeof text !== 'string') return null;
+    const num = parseInt(text.trim(), 10);
+    return isNaN(num) ? null : num;
+  };
+
+  // Single formatter helpers (avoid redefining later)
+  const listBarbers = (arr = []) =>
+    arr.map((b,i)=>`${i+1}. ${b.name}${b.address?' - '+b.address:''}`).join('\n');
+  const listServices = (arr = []) =>
+    arr.map((s,i)=>`${i+1}. ${s.name}${s.price!=null?` — $${(+s.price).toFixed(2)}`:''}`).join('\n');
+
+  const resetAssistant = useCallback(() => {
+    setMessages([]);
+    setInput('');
+    setPendingDateTime(null);
+    setBookingStep('idle');
+    setLoading(false);
+    setError('');
+    setShowMenu(true);
+    setMode(null);
+    setNewStep('idle');
+    setBarbersCache([]);
+    setServicesCache([]);
+    setSelectedBarber(null);
+    setSelectedService(null);
+    setSelectedPrice(null);
+    setSelectedTime(null);
+    setProcessing(false);
+    setCancelStage('idle');
+    setRecentAppointments([]);
+    setCancelPick(null); // <-- fixed missing parenthesis
   }, []);
 
-  useAutoStartRecording((transcript) => {
-    handleSendMessage(transcript);
-  });
+  // REMOVE the entire duplicate block that started with:
+  // // ---------- Helper Utilities (single source of truth) ----------
+  // (Delete all those redefinitions of cleanSpaces, normalizeDisplayTime, toTime24, etc.)
 
-  const speakMessage = (text) => {
-    Speech.speak(text);
-  };
+  const addBotMessage = (text) =>
+    setMessages(prev => [...prev, { id: Date.now().toString(), sender:'bot', text }]);
+  const addUserMessage = (text) =>
+    setMessages(prev => [...prev, { id: Date.now().toString(), sender:'user', text }]);
 
-  const addBotMessage = (text) => {
-    const id = `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
-    setMessages(prev => [...prev, { id, sender: 'assistant', text }]);
-    speakMessage(text);
-    scrollRef.current?.scrollToEnd({ animated: true });
-  };
+  const handleOptionSelect = async (selectedMode) => {
+    setMode(selectedMode);
+    setMessages([]);
+    setInput('');
+    setLoading(false);
 
-  const wordToNumber = (word) => {
-    const map = {
-      one: 1, two: 2, three: 3, four: 4, five: 5,
-      six: 6, seven: 7, eight: 8, nine: 9, ten: 10
+    if (selectedMode === 'cancel') {
+      setCancelStage('list');
+      try {
+        const recents = await getRecentAppointmentsForUser(currentUser?.uid, 3);
+        console.log('[CANCEL] recent appointments', recents);
+        setRecentAppointments(recents);
+        if (!recents.length) {
+          addBotMessage('No appointments found to cancel. Type "menu" to return.');
+          Speech.speak('No appointments found to cancel.');
+          return;
+        }
+        const lines = recents.map((a,i)=>`${i+1}. ${a.date} ${a.time} — ${a.serviceName || 'Service'}`).join('\n');
+        const msg = `Most recent appointments:\n${lines}\n\nReply with a number (1-${recents.length}) to cancel.`;
+        addBotMessage(msg);
+        Speech.speak('Reply with a number to cancel.');
+        return;
+      } catch {
+        addBotMessage('Could not load appointments. Type "menu" to return.');
+        Speech.speak('Could not load appointments.');
+        return;
+      }
+    }
+
+    if (selectedMode === 'repeat') {
+      try {
+        const last = await getLastAppointmentForUser(currentUser?.uid);
+        if (!last) {
+          addBotMessage('No previous appointment found. Use "New" instead.');
+          Speech.speak('No previous appointment found. Use new instead.');
+          setMode(null);
+          return;
+        }
+        setLastAppointment(last);
+        addBotMessage(
+          `Repeating last service: ${last.serviceName || 'Service'} with ${last.barberName || 'barber'}.\n` +
+          `Provide new day & time (e.g. Friday 9:00 AM).`
+        );
+        Speech.speak('Provide new day and time.');
+      } catch {
+        addBotMessage('Could not load last appointment.');
+        Speech.speak('Could not load last appointment.');
+        setMode(null);
+      }
+      return;
+    }
+
+    const modeMessages = {
+      new: "Great! Let’s schedule your new haircut. Would you like to see the barbers I have in your area?",
+      repeat: "Booking your previous haircut. What time would you like to come in?",
+      pay: "Let’s complete your payment. Do you want to pay with card or wallet?"
     };
-    return map[word.toLowerCase()] || parseInt(word);
+    const message = modeMessages[selectedMode] || '';
+    if (message) { addBotMessage(message); Speech.speak(message); }
   };
 
-  const handleSendMessage = useCallback(async (text = input) => {
-    if (!text.trim()) return;
-    const userMessage = { id: `${Date.now()}-${Math.random().toString(36).substr(2, 5)}`, text, sender: 'user' };
-    setMessages(prev => [...prev, userMessage]);
+  const handleSendMessage = async () => {
+    if (!input.trim() || loading) return;
+    const userText = input.trim();
+    addUserMessage(userText);
     setInput('');
     setLoading(true);
     setError('');
-    scrollRef.current?.scrollToEnd({ animated: true });
+
+    // If no mode selected yet, allow picking 1/2/3/4 or names
+if (!mode) {
+  const t = userText.toLowerCase();
+  const pick =
+    t === '1' || t.includes('new') ? 'new' :
+    t === '2' || t.includes('repeat') || t.includes('previous') ? 'repeat' :
+    t === '3' || t.includes('cancel') ? 'cancel' :
+    t === '4' || t.includes('pay') ? 'pay' : null;
+
+  if (pick) {
+    await handleOptionSelect(pick); // reuse your existing function
+    setLoading(false);
+    return;
+  }
+
+  addBotMessage('Please pick 1, 2, 3, or 4 to continue.');
+  Speech.speak('I can help with the following options - press 1, 2, 3, or 4 to continue.');
+  setLoading(false);
+  return;
+}
+
 
     try {
-      const profile = await getUserProfile(currentUser?.uid);
-      const barbers = await getBarbersByZipcode(profile.zipcode);
-      setBarberList(barbers);
+      // Cancel flow (last 3)
+      if (mode === 'cancel') {
+        if (cancelStage === 'list') {
+          const num = parseInt(userText,10);
+            if (isNaN(num) || num < 1 || num > recentAppointments.length) {
+              addBotMessage(`Enter a number 1-${recentAppointments.length}, or type "menu".`);
+              Speech.speak(`Enter a number 1-${recentAppointments.length}, or type "menu".`);
 
-      // 👇 If user types "haircut", "book", etc. — show list
-      if (!selectedBarber && /(haircut|book|appointment|fade)/i.test(text)) {
-        const options = barbers.map((b, i) => `${i + 1}. ${b.name}`).join('\n');
-        addBotMessage(`Here are barbers near you:\n${options}\nPlease choose a barber by number.`);
-        return;
-      }
-
-      if (!selectedBarber) {
-        const barberIndex = wordToNumber(text.trim());
-        if (!isNaN(barberIndex) && barberIndex >= 1 && barberIndex <= barbers.length) {
-          const matchedBarber = barbers[barberIndex - 1];
-          const services = await getBarberServices(matchedBarber.id);
-          matchedBarber.styles = services.map(s => `${s.name} - $${s.price}`);
-          setSelectedBarber(matchedBarber);
-          addBotMessage(`👍 You selected barber #${barberIndex}. Here are their services:`);
-          const styleList = matchedBarber.styles.map((s, i) => `${i + 1}. ${s}`).join('\n') || 'No services listed';
-          addBotMessage(styleList);
-          return;
+              setLoading(false); return;
+            }
+          const chosen = recentAppointments[num-1];
+          setCancelPick(chosen);
+          setCancelStage('confirm');
+          addBotMessage(`Cancel ${chosen.date} at ${chosen.time}? (yes/no)`);
+          Speech.speak('Confirm cancellation yes or no.');
+          setLoading(false); return;
         }
-      }
-
-      if (selectedBarber && !selectedService) {
-        const word = text.trim().toLowerCase();
-        const numberChoice = wordToNumber(word);
-        const rawServices = await getBarberServices(selectedBarber.id);
-        const serviceNames = rawServices.map(s => s.name);
-        let matchedService = null;
-
-        if (!isNaN(numberChoice) && serviceNames[numberChoice - 1]) {
-          matchedService = serviceNames[numberChoice - 1];
-        } else {
-          matchedService = serviceNames.find((name) => word.includes(name.toLowerCase()));
-        }
-
-        if (matchedService) {
-          setSelectedService(matchedService);
-          const index = serviceNames.findIndex(s => s === matchedService);
-          addBotMessage(`🎨 You selected ${index + 1}. ${matchedService}. What time would you like today?`);
-          return;
-        }
-      }
-
-      if (selectedBarber && selectedService && !selectedTime) {
-        const avail = await getBarberAvailability(selectedBarber.id);
-        setAvailability(avail);
-        const offset = parseDayOffset(text);
-        const targetDate = new Date();
-        if (offset !== null) targetDate.setDate(targetDate.getDate() + offset);
-        const date = targetDate.toISOString().split('T')[0];
-
-        const timeMatch = text.match(/\b\d{1,2}:\d{2}\s?(AM|PM)\b/i);
-        if (timeMatch) {
-          const time = timeMatch[0];
-          const valid = avail.find(a => a.time.toLowerCase() === time.toLowerCase() && a.date === date);
-          console.log("📅 Parsed date:", date);
-          console.log("⏰ Requested time:", timeMatch?.[0]);
-          console.log("📊 Full availability list:", avail);
-          const dayAvail = avail.filter(a => a.date === date);
-          console.log("📊 Availability for selected date:", dayAvail);
-
-          if (valid) {
-            setSelectedTime({ time: valid.time, date: valid.date });
-            addBotMessage(`⏰ ${valid.time} on ${valid.date} is available. Reply "yes" to confirm.`);
-            return;
+        if (cancelStage === 'confirm') {
+          if (/^\s*yes\s*$/i.test(userText)) {
+            try {
+              await cancelAppointment(cancelPick.id, currentUser.uid);
+              console.log('[CANCEL] cancelled', cancelPick.id);
+              await cancelAppointmentNotifications(cancelPick.id, currentUser.uid);
+              await removeAppointmentFromCalendar(cancelPick);
+              addBotMessage(`✅ Cancelled ${cancelPick.date} at ${cancelPick.time}.`);
+              Speech.speak(`Cancelled ${cancelPick.date} at ${cancelPick.time}.`);
+            } catch {
+              addBotMessage('❌ Could not cancel. Try again later.');
+              Speech.speak('Could not cancel.');
+            }
+          } else if (/^\s*no\s*$/i.test(userText)) {
+            addBotMessage('Not cancelled.');
+            Speech.speak('Not cancelled.');
           } else {
-            const times = avail.map(a => a.time).join(', ');
-            addBotMessage(`❌ That time isn't available. Try one of these for ${date}: ${times}`);
-            return;
+            addBotMessage('Reply "yes" or "no".');
+            Speech.speak('Reply "yes" or "no".');
+
+            setLoading(false); return;
           }
-        } else {
-          const times = avail.map(a => a.time).join(', ');
-          addBotMessage(`⏰ Please provide a time like "2:30 PM". Available today: ${times}`);
+          // reset cancel state
+          setMode(null);
+          setCancelStage('idle');
+          setRecentAppointments([]);
+          setCancelPick(null);
+          setLoading(false); return;
+        }
+        addBotMessage('Type "menu" to return.');
+        Speech.speak('Type "menu" to return.');
+
+        setLoading(false);
+        return;
+      }
+
+      // Repeat booking flow
+      if (mode === 'repeat') {
+        // Expecting a day+time message
+        if (!lastAppointment) {
+          addBotMessage('No prior appointment loaded. Type "menu".');
+          Speech.speak('No prior appointment loaded. Type "menu".');
+
+          setLoading(false); 
           return;
+        }
+        const timeMatch = userText.match(/\b\d{1,2}:\d{2}\s?(AM|PM)\b/i);
+        const offset = parseDayOffset(userText);
+        if (!timeMatch || offset == null) {
+          addBotMessage('Please give weekday + time like "Friday 9:00 AM".');
+          Speech.speak('Please give weekday + time like "Friday 9:00 AM".');
+
+          setLoading(false); 
+          return;
+        }
+        const requestedDate = new Date(Date.now() + offset*86400000).toISOString().split('T')[0];
+        const requestedTime = timeMatch[0];
+        // Validate availability for original barber
+        const avail = await getBarberAvailability(lastAppointment.barberId);
+        const wanted24 = anyTo24(requestedTime);
+        const valid = avail.find(a => a.date === requestedDate && anyTo24(a.time) === wanted24);
+        if (!valid) {
+          const sameDay = avail.filter(a=>a.date===requestedDate).map(a=>a.time);
+          addBotMessage(`Not available. Available on ${requestedDate}: ${sameDay.join(', ') || 'None'}`);
+          Speech.speak(`Not available. Available on ${requestedDate}: ${sameDay.join(', ') || 'None'}`);
+
+          setLoading(false); 
+          return;
+        }
+        // Confirm immediately then book
+        try {
+          const appointment = {
+            barberId: lastAppointment.barberId,
+            barberName: lastAppointment.barberName,
+            barberAddress: lastAppointment.barberAddress,
+            barberPhone: lastAppointment.barberPhone,
+            customerId: currentUser.uid,
+            customerName: lastAppointment.customerName || '',
+            serviceName: lastAppointment.serviceName,
+            servicePrice: lastAppointment.servicePrice ?? null,
+            date: requestedDate,
+            time: valid.time
+          };
+          const saved = await bookAppointment(appointment);
+          addBotMessage(`✅ Rebooked ${saved.serviceName} at ${saved.time} on ${saved.date}.`);
+          Speech.speak(` Rebooked ${saved.serviceName} at ${saved.time} on ${saved.date}.`);
+
+        } catch {
+          addBotMessage('❌ Could not rebook.');
+          Speech.speak('Could not rebook.');
+        }
+        // Reset repeat mode
+        setMode(null);
+        setLastAppointment(null);
+        setLoading(false);
+        return;
+      }
+
+      // New booking flow
+      if (mode === 'new') {
+        if (newStep === 'idle') {
+          const profile = await getUserProfile(currentUser?.uid);
+          const barbers = await getBarbersByZipcode(profile?.zipcode || '');
+          setBarbersCache(barbers);
+          if (!barbers.length) {
+            addBotMessage("I couldn’t find barbers near you yet.");
+            Speech.speak("I couldn’t find barbers near you yet.");
+            setLoading(false); return;
+          }
+          addBotMessage(`Barbers near ${profile?.zipcode}:\n${listBarbers(barbers)}\n\nReply with a number.`);
+          Speech.speak('Reply with a number to choose a barber.');
+          setNewStep('chooseBarber');
+          setLoading(false); return;
+        }
+
+        if (newStep === 'chooseBarber') {
+          const idx = parseNumberChoice(userText);
+          if (!idx || idx < 1 || idx > barbersCache.length) {
+            addBotMessage(`Choose a valid number 1–${barbersCache.length}.`);
+            Speech.speak(`Choose a valid number 1–${barbersCache.length}.`);
+            setLoading(false); return;
+          }
+          const b = barbersCache[idx-1];
+          setSelectedBarber(b);
+          const services = await getBarberServices(b.id);
+          setServicesCache(services);
+          if (!services.length) {
+            addBotMessage('No services for that barber. Type "menu" to restart.');
+            Speech.speak('No services for that barber. Type "menu" to restart.');
+            setLoading(false); return;
+          }
+          addBotMessage(`Services:\n${listServices(services)}\n\nReply with a number.`);
+          Speech.speak('Reply with a number to choose a service.');
+          setNewStep('chooseService');
+          setLoading(false); return;
+        }
+
+        if (newStep === 'chooseService') {
+          const idx = parseNumberChoice(userText);
+          if (!idx || idx < 1 || idx > servicesCache.length) {
+            addBotMessage(`Choose a valid number 1–${servicesCache.length}.`);
+            Speech.speak(`Choose a valid number 1–${servicesCache.length}.`);
+            setLoading(false); return;
+          }
+          const svc = servicesCache[idx-1];
+          setSelectedService(svc.name);
+          setSelectedPrice(svc.price ?? null);
+          addBotMessage(`Selected "${svc.name}" — $${(svc.price ?? 0).toFixed(2)}. Provide day & time (e.g. Friday 9:00 AM).`);
+          Speech.speak('Provide day and time.');
+          setNewStep('chooseDateTime');
+          setLoading(false); return;
+        }
+
+        if (newStep === 'chooseDateTime') {
+          const timeMatch = userText.match(/\b\d{1,2}:\d{2}\s?(AM|PM)\b/i);
+          const offset = parseDayOffset(userText);
+          if (!timeMatch || offset == null) {
+            addBotMessage('Please say a weekday + time like "Friday 9:00 AM".');
+            Speech.speak('Please say a weekday and time like "Friday 9:00 AM".');
+            setLoading(false); return;
+          }
+          const requestedDate = new Date(Date.now() + offset*86400000).toISOString().split('T')[0];
+          const requestedTime = timeMatch[0];
+          const avail = await getBarberAvailability(selectedBarber.id);
+          const wanted24 = anyTo24(requestedTime);
+          const valid = avail.find(a => a.date === requestedDate && anyTo24(a.time) === wanted24);
+          if (!valid) {
+            const sameDay = avail.filter(a=>a.date===requestedDate).map(a=>a.time);
+            addBotMessage(`Not available. Available on ${requestedDate}: ${sameDay.join(', ') || 'None'}`);
+            Speech.speak(`Not available. Available on ${requestedDate}: ${sameDay.join(', ') || 'None'}`);
+            setLoading(false); return;
+          }
+          setSelectedTime({ date: requestedDate, time: valid.time });
+          addBotMessage(`Confirm ${valid.time} on ${requestedDate}? (yes/no)`);
+          Speech.speak('Confirm yes or no.');
+          setNewStep('confirm');
+          setLoading(false); return;
+        }
+
+        if (newStep === 'confirm') {
+          if (!/^\s*yes\s*$/i.test(userText)) {
+            addBotMessage('Not confirmed. Provide another day/time or type "menu".');
+            Speech.speak('Not confirmed. Provide another day and time or type "menu".');
+            setLoading(false); return;
+          }
+          const profile = await getUserProfile(currentUser?.uid);
+          const appointment = {
+            barberId: selectedBarber.id,
+            barberName: selectedBarber.name,
+            barberAddress: selectedBarber.address,
+            barberPhone: selectedBarber.phone,
+            customerId: currentUser.uid,
+            customerName: profile?.name || '',
+            serviceName: selectedService,
+            servicePrice: selectedPrice ?? null,
+            date: selectedTime.date,
+            time: selectedTime.time
+          };
+          try {
+            const saved = await bookAppointment(appointment);
+            addBotMessage(`✅ Booked with ${saved.barberName} for "${saved.serviceName}" at ${saved.time} on ${saved.date}.`);
+            Speech.speak(`Booked at ${saved.time} on ${saved.date}.`);
+          } catch {
+            addBotMessage('❌ Booking failed. Try again.');
+            Speech.speak('Booking failed. Try again.');
+          }
+          // reset booking state
+          setMode(null);
+          setNewStep('idle');
+          setBarbersCache([]); setServicesCache([]);
+          setSelectedBarber(null); setSelectedService(null);
+            setSelectedPrice(null); setSelectedTime(null);
+          setLoading(false); return;
         }
       }
 
-      if (selectedBarber && selectedService && selectedTime && text.toLowerCase().includes('yes')) {
-        const appointmentData = {
-          barberId: selectedBarber.id,
-          service: selectedService,
-          date: selectedTime.date,
-          time: selectedTime.time,
-          customerId: currentUser.uid,
-        };
-        await createAppointment(appointmentData);
-        await addAppointmentToCalendar(appointmentData);
-        await scheduleAppointmentReminder(appointmentData);
+      // Other modes (repeat/pay) or AI logic (optional) can go here.
 
-        addBotMessage(`✅ Appointment confirmed with ${selectedBarber.name} for "${selectedService}" at ${selectedTime.time} on ${selectedTime.date}.`);
-
-        // Reset for next round
-        setSelectedBarber(null);
-        setSelectedService(null);
-        setSelectedTime(null);
-        setAvailability([]);
-        return;
-      }
-    } catch (err) {
-      console.error('❌ Error in chat:', err);
-      setError('An error occurred. Please try again.');
+    } catch (e) {
+      console.error('[handleSendMessage]', e);
+      addBotMessage('Unexpected error.');
+      Speech.speak('Unexpected error occurred.');
     } finally {
       setLoading(false);
     }
-  }, [input, messages, currentUser?.uid, selectedBarber, selectedService, selectedTime]);
+  };
+
+useEffect(() => {
+  if (scrollRef.current) {
+    try { scrollRef.current.scrollToEnd({ animated:true }); } catch {}
+  }
+}, [messages]);
+
+  useFocusEffect(
+    useCallback(() => {
+      // Reset all conversational state when screen gains focus
+      resetAssistant();
+      hasShownMenu.current = false; // allow menu to show again
+      // Defer one tick so reset finishes before adding menu
+      setTimeout(() => {
+        const menuText =
+          "What would you like to do?\n" +
+          "1) New Appointment\n" +
+          "2) Repeat Appointment\n" +
+          "3) Cancel Appointment\n" +
+          "4) Pay Your Bill\n" +
+          "Type a number or option name.";
+        addBotMessage(menuText);
+        try { Speech.speak("Choose an option: 1 new, 2 repeat, 3 cancel, or 4 pay."); } catch {}
+        hasShownMenu.current = true;
+      }, 0);
+      return () => {
+        // (optional) cleanup if needed
+      };
+    }, [resetAssistant])
+  );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Chat Assistant</Text>
-          <Waveform isListening={isListening} />
-        </View>
-        <ScrollView
-          style={styles.chatBox}
-          ref={scrollRef}
-          contentContainerStyle={{ padding: 10 }}
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-        >
-          {messages.map((msg) => (
-            <Text key={msg.id} style={msg.sender === 'user' ? styles.userText : styles.botText}>
-              {msg.sender === 'user' ? 'You: ' : 'Assistant: '}{msg.text}
+    <SafeAreaView style={{ flex:1, backgroundColor:'#fff' }}>
+      <View style={styles.modeRow}>
+        <TouchableOpacity onPress={()=>handleOptionSelect('new')} style={[styles.modeBtn, mode==='new' && styles.modeBtnActive]}>
+          <Text style={styles.modeBtnText}>New Appt</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>handleOptionSelect('repeat')} style={[styles.modeBtn, mode==='repeat' && styles.modeBtnActive]}>
+          <Text style={styles.modeBtnText}>Previous Appt</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>handleOptionSelect('cancel')} style={[styles.modeBtn, mode==='cancel' && styles.modeBtnActive]}>
+          <Text style={styles.modeBtnText}>Cancel Appt</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>handleOptionSelect('pay')} style={[styles.modeBtn, mode==='pay' && styles.modeBtnActive]}>
+          <Text style={styles.modeBtnText}>Pay Bill</Text>
+        </TouchableOpacity>
+      </View>
+      <FlatList
+        ref={scrollRef}
+        data={messages}
+        keyExtractor={i=>i.id}
+        renderItem={({item})=>(
+          <View style={{ marginVertical:6 }}>
+            <Text style={{ fontWeight:item.sender==='bot'?'600':'400' }}>
+              {item.sender==='bot' ? `Assistant: ${item.text}` : `You: ${item.text}`}
             </Text>
-          ))}
-          {loading && <ActivityIndicator style={{ marginTop: 10 }} size="small" color="gray" />}
-          {error && <Text style={{ marginTop: 10, color: 'red' }}>{error}</Text>}
-        </ScrollView>
-        <View style={styles.inputContainer}>
-          <TextInput value={input} onChangeText={setInput} placeholder="Ask me anything..." style={styles.input} onSubmitEditing={() => handleSendMessage()} />
-          <Button title="Send" onPress={() => handleSendMessage()} disabled={loading} />
-        </View>
+          </View>
+        )}
+        contentContainerStyle={{ padding:16, paddingBottom:120 }}
+      />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16 }}
+      >
+        <TextInput
+          value={input}
+          onChangeText={setInput}
+          placeholder="Type your message..."
+          style={{
+            flex: 1,
+            borderWidth: 1,
+            borderColor: '#ccc',
+            borderRadius: 20,
+            padding: 10,
+            marginRight: 8,
+          }}
+        />
+        <TouchableOpacity
+          onPress={handleSendMessage}
+          style={{
+            backgroundColor: '#007bff',
+            borderRadius: 20,
+            paddingVertical: 10,
+            paddingHorizontal: 16,
+          }}
+        >
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Send</Text>
+        </TouchableOpacity>
       </KeyboardAvoidingView>
+
+      {loading && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color="#007bff" />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    paddingTop: 48, paddingBottom: 12, alignItems: 'center',
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee'
+  modeBtn:{ backgroundColor:'#007bff', paddingVertical:8, paddingHorizontal:14, borderRadius:16, marginRight:8 },
+  modeBtnText:{ color:'#fff', fontWeight:'600' },
+  modeRow: {
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#f8f8f8',
+    borderBottomWidth: 1,
+    borderBottomColor: '#ddd',
   },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#2196F3' },
-  chatBox: { flex: 1 },
-  userText: { alignSelf: 'flex-end', marginVertical: 2 },
-  botText: { alignSelf: 'flex-start', marginVertical: 2, color: 'blue' },
+  modeBtnActive: {
+    backgroundColor: '#005fcc',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  messageContainer: {
+    marginVertical: 8,
+  },
+  botMessage: {
+    fontWeight: 'bold',
+  },
+  userMessage: {
+    textAlign: 'right',
+  },
   inputContainer: {
-    flexDirection: 'row', alignItems: 'center', padding: 8,
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#eee'
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#ccc',
   },
-  input: {
-    flex: 1, borderWidth: 1, padding: 10,
-    borderRadius: 5, marginRight: 8
-  }
+  textInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 20,
+    padding: 10,
+    marginRight: 8,
+  },
+  sendButton: {
+    backgroundColor: '#007bff',
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  sendButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
 });
+
+
