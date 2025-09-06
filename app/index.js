@@ -1,18 +1,8 @@
-import { useEffect } from 'react';
-import { router } from 'expo-router';
-
-import { Redirect } from 'expo-router';
-
+import { View, Text } from "react-native";
 export default function Index() {
-
-
-  
-  useEffect(() => {
-  const timeout = setTimeout(() => {
-    router.replace('/(auth)/login');
-  }, 50); // Give router time to mount
-  return () => clearTimeout(timeout);
-}, []);
-
-  return <Redirect href="/(auth)/login" />;
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <Text style={{ fontSize: 28 }}>HELLO</Text>
+    </View>
+  );
 }

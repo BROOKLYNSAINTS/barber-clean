@@ -3,7 +3,7 @@ import { Tabs } from "expo-router";
 import { Ionicons } from '@expo/vector-icons';
 import theme from "@/styles/theme"; // Adjusted path
 import { Slot } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
+//import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 //export { BarberTabLayout as default } from '../../RootLayout';
 import { useAuth } from '@/contexts/AuthContext';

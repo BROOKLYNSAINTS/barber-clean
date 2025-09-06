@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Slot } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
+//import * as SplashScreen from 'expo-splash-screen';
 import { listenToAuthChanges } from '@/services/firebase';
 import { AuthProvider } from '@/contexts/AuthContext';
 import * as Notifications from 'expo-notifications';
@@ -16,9 +16,9 @@ Notifications.setNotificationHandler({
 });
 
 export default function RootLayout() {
-  useEffect(() => {
+ /* useEffect(() => {
     SplashScreen.hideAsync();
-  }, []);
+  }, []);*/
 
   return (
     <SafeAreaProvider>

@@ -1,4 +1,7 @@
 {
+  "cli": {
+    "appVersionSource": "local"
+  },
   "build": {
     "development": {
       "developmentClient": true,
@@ -11,14 +14,14 @@
       "developmentClient": false,
       "ios": {
         "simulator": false,
-        "buildConfiguration": "Debug",
-        "autoIncrement": true,
-        "distribution": "internal"
+        "buildConfiguration": "Release",
+        "autoIncrement": false,
+        "distribution": "store"
       },
       "android": {
-        "buildType": "apk",
+        "buildType": "app-bundle",
         "autoIncrement": true,
-        "distribution": "internal"
+        "distribution": "store"
       }
     },
     "simulator": {
@@ -29,8 +32,5 @@
   },
   "submit": {
     "production": {}
-  },
-  "cli": {
-    "appVersionSource": "remote"
   }
 }
