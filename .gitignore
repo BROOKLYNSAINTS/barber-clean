@@ -38,3 +38,7 @@ src/config/firebaseConfig.prod.js
 # typescript
 *.tsbuildinfo
 .env
+
+# ignore credentials
+credentials/
+*.json
