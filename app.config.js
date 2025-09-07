@@ -18,7 +18,7 @@ export default {
   },
   assetBundlePatterns: ['**/*'],
   ios: {
-    buildNumber: '12',
+    buildNumber: '21',
     infoPlist: {
       "ITSAppUsesNonExemptEncryption": false,
       NSSpeechRecognitionUsageDescription: "This app uses speech recognition to convert your voice into text for easier input.",
