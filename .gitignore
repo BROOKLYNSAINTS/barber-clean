@@ -39,3 +39,4 @@ src/config/firebaseConfig.prod.js
 *.tsbuildinfo
 .env
 credentials/
+credentials/*.json
