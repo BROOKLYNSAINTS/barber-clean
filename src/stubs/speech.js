@@ -1,4 +1,2 @@
-export default {
-  speak: () => {},
-  stop: () => {}
-};
+export async function speak() {}
+export async function stop() {}
