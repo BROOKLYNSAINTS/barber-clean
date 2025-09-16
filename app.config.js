@@ -21,6 +21,7 @@ export default {
     infoPlist: {
       NSCalendarsUsageDescription: "This app requires calendar access to schedule your appointments.",
       NSCalendarsFullAccessUsageDescription: "This app needs full access to your calendar to create and manage appointments.",
+      ITSAppUsesNonExemptEncryption: false, // added
     },
     bundleIdentifier: 'com.ScheduleSync.barber',
     supportsTablet: true,
