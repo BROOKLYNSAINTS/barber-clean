@@ -38,3 +38,4 @@ src/config/firebaseConfig.prod.js
 # typescript
 *.tsbuildinfo
 .env
+credentials/
