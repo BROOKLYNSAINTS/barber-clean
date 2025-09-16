@@ -3,44 +3,19 @@ export default {
   name: 'barber-clean',
   slug: 'barber-clean',
   version: '1.0.1',
-  orientation: 'portrait',
-  icon: './assets/icon-512.png',
-  userInterfaceStyle: 'light',
-  splash: {
-    image: './assets/icon-512.png',
-    resizeMode: 'cover',
-    backgroundColor: '#ffffff',
-  },
-  updates: { fallbackToCacheTimeout: 0 },
-  assetBundlePatterns: ['**/*'],
   ios: {
     buildNumber: '65',
     bundleIdentifier: 'com.ScheduleSync.barber',
     supportsTablet: true,
-    infoPlist: {
-      ITSAppUsesNonExemptEncryption: false
-    }
+    infoPlist: { ITSAppUsesNonExemptEncryption: false }
   },
   android: {
     package: 'com.ScheduleSync.barber'
   },
   extra: {
-    FIREBASE_API_KEY: process.env.FIREBASE_API_KEY,
-    FIREBASE_AUTH_DOMAIN: process.env.FIREBASE_AUTH_DOMAIN,
-    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID,
-    FIREBASE_STORAGE_BUCKET: process.env.FIREBASE_STORAGE_BUCKET,
-    FIREBASE_MESSAGING_SENDER_ID: process.env.FIREBASE_MESSAGING_SENDER_ID,
-    FIREBASE_APP_ID: process.env.FIREBASE_APP_ID,
-    FIREBASE_MEASUREMENT_ID: process.env.FIREBASE_MEASUREMENT_ID,
-    STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     eas: { projectId: '34c586b7-af2c-411d-9fbd-5cb699e2b12e' }
   },
   plugins: [
-    'expo-asset',
-    ['expo-calendar', {
-      calendarPermission: 'Allow access to your calendar.',
-      remindersPermission: 'Allow access to your reminders.'
-    }]
-  ],
+    'expo-asset'
+  ]
 };
