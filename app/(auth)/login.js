@@ -5,7 +5,7 @@ import { loginWithEmail } from '@/services/restAuth';
 import { getUserProfile } from '@/services/firebase'; // Add this at the top
 
 import { registerForPushNotifications, saveNotificationToken } from '@/services/notifications';
-import { FIREBASE_API_KEY } from '@env';
+const { FIREBASE_API_KEY } = process.env;
 import DebugUser from '@/components/DebugUser';
 import { useAuth } from '@/contexts/AuthContext';
 console.log("🔑 Firebase API Key from env:", FIREBASE_API_KEY);

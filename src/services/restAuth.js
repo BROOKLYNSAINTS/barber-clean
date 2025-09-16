@@ -1,16 +1,14 @@
 import axios from 'axios';
-import { FIREBASE_API_KEY } from '@env';
+// import { FIREBASE_API_KEY } from '@env';
+const { FIREBASE_API_KEY } = process.env;
 import { signInWithEmailAndPassword } from 'firebase/auth';
-import { Alert } from 'react-native';
 import { auth } from './firebase';
-const FIREBASE_AUTH_URL = `https://identitytoolkit.googleapis.com/v1/accounts`;
 
-console.log('🔑 Firebase API Key:', FIREBASE_API_KEY);
-
-export const loginWithEmail = async (email, password) => {
-  const userCredential = await signInWithEmailAndPassword(auth, email, password);
-  return userCredential.user;
-};
+export async function loginWithEmail(email, password) {
+  if (!email || !password) throw new Error('Email and password required.');
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
 
 /*export const loginWithEmail = async (email, password) => {
   console.log("📤 Starting loginWithEmail (using fetch)...");
