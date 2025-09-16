@@ -1,0 +1,5 @@
+--- ipa_compare/old_layout.txt	2025-09-08 07:02:38
++++ ipa_compare/new_layout.txt	2025-09-08 07:02:38
+@@ -1 +1 @@
+-OLD files:
++NEW files:

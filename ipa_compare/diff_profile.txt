@@ -1,0 +1,13 @@
+--- ipa_compare/old_profile_summary.txt	2025-09-08 07:02:38
++++ ipa_compare/new_profile_summary.txt	2025-09-08 07:02:38
+@@ -1,5 +1,5 @@
+-File Doesn't Exist, Will Create: ipa_compare/old_profile.plist
+-File Doesn't Exist, Will Create: ipa_compare/old_profile.plist
+-File Doesn't Exist, Will Create: ipa_compare/old_profile.plist
+-File Doesn't Exist, Will Create: ipa_compare/old_profile.plist
+-File Doesn't Exist, Will Create: ipa_compare/old_profile.plist
++File Doesn't Exist, Will Create: ipa_compare/new_profile.plist
++File Doesn't Exist, Will Create: ipa_compare/new_profile.plist
++File Doesn't Exist, Will Create: ipa_compare/new_profile.plist
++File Doesn't Exist, Will Create: ipa_compare/new_profile.plist
++File Doesn't Exist, Will Create: ipa_compare/new_profile.plist

@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "barber-clean",
+    "slug": "barber-clean",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon-512.png",
+    "userInterfaceStyle": "light",
+    "scheme": "barberscheduler",
+    "jsEngine": "hermes",
+    "splash": {
+      "image": "./assets/icon-512.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff",
+      "hideExponentIconInStatusBar": true
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "buildNumber": "40",
+      "bundleIdentifier": "com.ScheduleSync.barber",
+      "supportsTablet": true,
+      "requireFullScreen": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIRequiresFullScreen": false,
+        "UILaunchStoryboardName": "SplashScreen",
+        "CADisableMinimumFrameDurationOnPhone": true,
+        "NSCameraUsageDescription": "This app needs camera access to let you take profile and appointment photos.",
+        "NSPhotoLibraryUsageDescription": "This app needs photo library access so you can select profile and appointment photos.",
+        "NSCalendarsUsageDescription": "This app needs calendar access to schedule your appointments.",
+        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition so you can speak instead of typing."
+      }
+    },
+    "plugins": [
+      ["expo-build-properties", {
+        "ios": {
+          "deploymentTarget": "15.1",
+          "useFrameworks": "static"
+        }
+      }]
+    ]
+  }
+}
