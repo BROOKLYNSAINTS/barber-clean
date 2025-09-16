@@ -9,7 +9,6 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Calendar from 'expo-calendar';
 import * as Notifications from 'expo-notifications';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../src/contexts/AuthContext';
@@ -113,61 +112,10 @@ export default function AppointmentConfirmationScreen() {
     return dateObj.toLocaleDateString(undefined, options);
   };
 
+  // REMOVE this function and its usage
   const addToCalendar = async () => {
-    if (!appointment || !barber || !service) return;
-    try {
-      setLoading(true);
-      const { status } = await Calendar.requestCalendarPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Calendar permission is required.');
-        setLoading(false);
-        return;
-      }
-
-      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
-      const defaultCalendar = calendars.find((cal) => cal.allowsModifications) || calendars[0];
-      if (!defaultCalendar) {
-        Alert.alert('Error', 'No writable calendar found.');
-        setLoading(false);
-        return;
-      }
-
-      // Debug logs for date/time conversion
-      console.log('DEBUG appointment.date:', appointment.date);
-      console.log('DEBUG appointment.time:', appointment.time);
-      console.log('DEBUG to24Hour(appointment.time):', to24Hour(appointment.time));
-
-      let startDate;
-      try {
-        startDate = getAppointmentDate(appointment.date, appointment.time);
-        console.log('DEBUG getAppointmentDate result:', startDate);
-      } catch (err) {
-        console.error('DEBUG getAppointmentDate error:', err);
-        Alert.alert('Error', 'Invalid date or time format.');
-        setLoading(false);
-        return;
-      }
-      const endDate = new Date(startDate.getTime() + (service.duration || 30) * 60000);
-
-      const eventDetails = {
-        title: `Haircut: ${service.name} with ${barber.name}`,
-        startDate,
-        endDate,
-        notes: `Appointment for ${service.name}. Price: $${(service.price || 0).toFixed(2)}`,
-        location: barber.address,
-        timeZone: Calendar.DEFAULT_CALENDAR_TIME_ZONE,
-        alarms: [{ relativeOffset: -60 }],
-      };
-
-      await Calendar.createEventAsync(defaultCalendar.id, eventDetails);
-      setCalendarAdded(true);
-      Alert.alert('Success', 'Appointment added to your calendar.');
-    } catch (error) {
-      console.error('Error adding to calendar:', error);
-      Alert.alert('Error', 'Failed to add appointment to calendar.');
-    } finally {
-      setLoading(false);
-    }
+    // Calendar integration removed (expo-calendar dependency stripped)
+    return true;
   };
 
   const scheduleReminder = async () => {

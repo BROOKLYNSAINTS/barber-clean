@@ -10,7 +10,7 @@ const DEFAULT_SLOTS = [
   '15:00','15:30','16:00','16:30','17:00','17:30','18:00'
 ];
 
-function buildNextDays(days = 30) {
+function buildNextDays(days = 14) {  // was 30
   const out = [];
   const now = new Date();
   for (let i = 0; i < days; i++) {
@@ -53,7 +53,7 @@ export default function AppointmentBookingScreen() {
 
   useEffect(() => { load(); }, [load]);
 
-  const days = useMemo(() => buildNextDays(30), []);
+  const days = useMemo(() => buildNextDays(14), []);
   const selectedKey = dateKey(selectedDate);
 
   const slotsForDay = useMemo(() => {
@@ -70,6 +70,12 @@ export default function AppointmentBookingScreen() {
     try {
       setSubmitting(true);
       const startISO = `${selectedKey}T${selectedSlot}:00.000Z`;
+      const maxDate = new Date();
+      maxDate.setDate(maxDate.getDate() + 14);
+      if (new Date(selectedKey) > maxDate) {
+        Alert.alert('Unavailable', 'You can only book up to 14 days ahead.');
+        return;
+      }
       await createAppointment({
         barberId,
         date: selectedKey,
