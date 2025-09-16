@@ -17,7 +17,7 @@ module.exports = {
     "**/*"
   ],
   "ios": {
-    "buildNumber": "61",
+    "buildNumber": "65",
     "bundleIdentifier": "com.ScheduleSync.barber",
     "supportsTablet": true,
     "infoPlist": {
