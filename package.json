@@ -41,7 +41,8 @@
     "expo-speech": "13.1.7",
     "expo-task-manager": "13.1.6",
     "expo-updates": "0.28.17",
-    "whatwg-fetch": "3.6.20"
+    "whatwg-fetch": "3.6.20",
+    "@expo/vector-icons": "^14.1.0"
   },
   "devDependencies": {
     "typescript": "5.8.3",
