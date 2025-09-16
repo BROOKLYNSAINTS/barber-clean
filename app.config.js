@@ -11,14 +11,15 @@ export default {
     resizeMode: 'cover',
     backgroundColor: '#ffffff',
   },
-  updates: {
-    fallbackToCacheTimeout: 0,
-  },
+  updates: { fallbackToCacheTimeout: 0 },
   assetBundlePatterns: ['**/*'],
   ios: {
     buildNumber: '65',
     bundleIdentifier: 'com.ScheduleSync.barber',
-    supportsTablet: true
+    supportsTablet: true,
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false
+    }
   },
   android: {
     package: 'com.ScheduleSync.barber'
