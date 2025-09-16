@@ -12,12 +12,12 @@
       "ios": {
         "simulator": false,
         "buildConfiguration": "Debug",
-        "autoIncrement": true,
+        "autoIncrement": false,
         "distribution": "internal"
       },
       "android": {
         "buildType": "apk",
-        "autoIncrement": true,
+        "autoIncrement": false,
         "distribution": "internal"
       }
     },
@@ -31,6 +31,6 @@
     "production": {}
   },
   "cli": {
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   }
 }

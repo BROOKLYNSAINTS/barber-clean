@@ -14,7 +14,7 @@ module.exports = {
   },
   assetBundlePatterns: ["**/*"],
   ios: {
-    buildNumber: "64",
+    buildNumber: "65",
     bundleIdentifier: "com.ScheduleSync.barber",
     supportsTablet: true,
     jsEngine: "hermes",
