@@ -16,6 +16,7 @@ export default {
     eas: { projectId: '34c586b7-af2c-411d-9fbd-5cb699e2b12e' }
   },
   plugins: [
-    'expo-asset'
+    'expo-asset',
+    'expo-calendar'
   ]
 };

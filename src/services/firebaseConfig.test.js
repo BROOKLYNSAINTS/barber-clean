@@ -1,14 +1,13 @@
 import { initializeApp, getApps } from 'firebase/app';
 
-/* import {
-  FIREBASE_API_KEY,
-  FIREBASE_AUTH_DOMAIN,
-  FIREBASE_PROJECT_ID
-} from '@env'; */
 const {
   FIREBASE_API_KEY,
   FIREBASE_AUTH_DOMAIN,
-  FIREBASE_PROJECT_ID
+  FIREBASE_PROJECT_ID,
+  FIREBASE_STORAGE_BUCKET,
+  FIREBASE_MESSAGING_SENDER_ID,
+  FIREBASE_APP_ID,
+  FIREBASE_MEASUREMENT_ID
 } = process.env;
 
 const firebaseConfig = {
@@ -18,10 +17,8 @@ const firebaseConfig = {
   storageBucket: FIREBASE_STORAGE_BUCKET,
   messagingSenderId: FIREBASE_MESSAGING_SENDER_ID,
   appId: FIREBASE_APP_ID,
-  measurementId: FIREBASE_MEASUREMENT_ID,
+  measurementId: FIREBASE_MEASUREMENT_ID
 };
 
 export const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-
-
 export default firebaseConfig;
