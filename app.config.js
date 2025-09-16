@@ -1,14 +1,13 @@
-import 'dotenv/config';
-
+try { require('dotenv').config(); } catch (e) {}
 export default {
   name: 'barber-clean',
   slug: 'barber-clean',
   version: '1.0.1',
   orientation: 'portrait',
-  icon: './assets/adaptive-icon.png',
+  icon: './assets/icon-512.png',
   userInterfaceStyle: 'light',
   splash: {
-    image: './assets/splash-icon.png',
+    image: './assets/icon-512.png',
     resizeMode: 'cover',
     backgroundColor: '#ffffff',
   },
@@ -18,20 +17,11 @@ export default {
   assetBundlePatterns: ['**/*'],
   ios: {
     buildNumber: '65',
-    infoPlist: {
-      NSCalendarsUsageDescription: "This app requires calendar access to schedule your appointments.",
-      NSCalendarsFullAccessUsageDescription: "This app needs full access to your calendar to create and manage appointments.",
-      ITSAppUsesNonExemptEncryption: false, // added
-    },
     bundleIdentifier: 'com.ScheduleSync.barber',
-    supportsTablet: true,
+    supportsTablet: true
   },
   android: {
-    package: 'com.ScheduleSync.barber',
-    adaptiveIcon: {
-      foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#FFFFFF',
-    },
+    package: 'com.ScheduleSync.barber'
   },
   extra: {
     FIREBASE_API_KEY: process.env.FIREBASE_API_KEY,
@@ -43,17 +33,13 @@ export default {
     FIREBASE_MEASUREMENT_ID: process.env.FIREBASE_MEASUREMENT_ID,
     STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    eas: {
-      projectId: "34c586b7-af2c-411d-9fbd-5cb699e2b12e"
-    }
+    eas: { projectId: '34c586b7-af2c-411d-9fbd-5cb699e2b12e' }
   },
   plugins: [
-    [
-      'expo-calendar',
-      {
-        calendarPermission: 'Allow access to your calendar.',
-        remindersPermission: 'Allow access to your reminders.',
-      },
-    ],
+    'expo-asset',
+    ['expo-calendar', {
+      calendarPermission: 'Allow access to your calendar.',
+      remindersPermission: 'Allow access to your reminders.'
+    }]
   ],
 };
