@@ -5,19 +5,8 @@ module.exports = function (api) {
     plugins: [
       [
         'module-resolver',
-        {
-          alias: {
-            '@': './src',
-          },
-        },
-      ],
-      [
-        'module:react-native-dotenv',
-        {
-          moduleName: '@env',
-          path: '.env',
-        },
-      ],
-    ],
+        { alias: { '@': './src' } }
+      ]
+    ]
   };
 };
