@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 
-// Manually define the config — DO NOT use @env
+// Manually define the config — DO NOT use
 const firebaseConfig = {
   apiKey: 'AIzaSyBVlmB5qdPmcGXJBFKjRz0KhIcgslRrHy4',
   authDomain: 'barber-38b88.firebaseapp.com',
