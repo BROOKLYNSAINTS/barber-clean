@@ -1,0 +1,97 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '@/services/firebase';
+import { fixFirebaseAuthStorage } from '@/services/fix-firebase-auth';
+
+export const AuthContext = createContext(null);
+
+export const AuthProvider = ({ children }) => {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState(null);
+
+  // Initialize authentication with error handling
+  useEffect(() => {
+    let unsubscribe = () => {};
+    
+    const initializeAuth = async () => {
+      try {
+        console.log('🔑 Initializing authentication...');
+        
+        // Set up auth state change listener
+        unsubscribe = onAuthStateChanged(auth, (user) => {
+          console.log('🔥 onAuthStateChanged fired:', user?.email || 'null');
+          setCurrentUser(user);
+          setLoading(false);
+        }, (error) => {
+          console.error('🔥 Auth state change error:', error);
+          setAuthError(error);
+          setLoading(false);
+          
+          // Try to fix auth if we encounter an error
+          tryFixAuth();
+        });
+      } catch (error) {
+        console.error('❌ Error initializing auth:', error);
+        setAuthError(error);
+        setLoading(false);
+        
+        // Try to fix auth if initialization fails
+        tryFixAuth();
+      }
+    };
+    
+    // Function to attempt auth fix if there's an error
+    const tryFixAuth = async () => {
+      try {
+        console.log('🔧 Attempting to fix auth issues...');
+        await fixFirebaseAuthStorage();
+        console.log('✅ Auth fix applied successfully');
+        
+        // Reset error state
+        setAuthError(null);
+      } catch (fixError) {
+        console.error('❌ Failed to apply auth fix:', fixError);
+      }
+    };
+    
+    initializeAuth();
+
+    // ⏱ Fallback: manually assign currentUser in case listener is delayed
+    const timeout = setTimeout(() => {
+      if (!auth.currentUser) return;
+      console.log('⏱ Fallback: manually setting currentUser from auth.currentUser');
+      setCurrentUser(auth.currentUser);
+      setLoading(false);
+    }, 1000);
+
+    return () => {
+      unsubscribe();
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  const value = {
+    currentUser,
+    loading,
+    authError,
+    // Add a method to manually trigger the auth fix
+    fixAuth: async () => {
+      try {
+        await fixFirebaseAuthStorage();
+        return true;
+      } catch (error) {
+        console.error('❌ Manual auth fix failed:', error);
+        return false;
+      }
+    }
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => useContext(AuthContext);

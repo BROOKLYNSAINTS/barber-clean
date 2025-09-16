@@ -37,7 +37,7 @@
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to upload service images."
 
       },
-      "buildNumber": "4"
+      "buildNumber": "65"
     },
     "android": {
       "package": "com.ScheduleSync.barber"
