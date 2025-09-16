@@ -1,299 +1,192 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
-import { Calendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import { getBarberAvailability, createAppointment, getUserProfile } from '@/services/firebase';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuth } from '@/contexts/AuthContext';
-import DebugUser from '@/components/DebugUser';
+
+const DEFAULT_SLOTS = [
+  '09:00','09:30','10:00','10:30','11:00','11:30',
+  '12:00','12:30','13:00','13:30','14:00','14:30',
+  '15:00','15:30','16:00','16:30','17:00','17:30','18:00'
+];
+
+function buildNextDays(days = 30) {
+  const out = [];
+  const now = new Date();
+  for (let i = 0; i < days; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    out.push(d);
+  }
+  return out;
+}
+const dateKey = d => d.toISOString().split('T')[0];
 
 export default function AppointmentBookingScreen() {
-  const { currentUser } = useAuth();
+  const { barberId } = useLocalSearchParams();
   const router = useRouter();
-  const params = useLocalSearchParams();
-  const service = params.service ? JSON.parse(params.service) : null;
-  
-  // Debug logging for navigation data
-  console.log('🔍 AppointmentBooking - Received params:', params);
-  console.log('🔍 AppointmentBooking - Parsed service:', service);
+  const [loading, setLoading] = useState(true);
+  const [barberAvailability, setBarberAvailability] = useState({});
+  const [userProfile, setUserProfile] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(buildNextDays()[0]);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const [selectedDate, setSelectedDate] = useState('');
-  const [availableSlots, setAvailableSlots] = useState([]);
-  const [selectedSlot, setSelectedSlot] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [error, setError] = useState('');
-
-  // Utility function to safely format a date string as YYYY-MM-DD
-  function getTodayString() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  function getMaxDateString(monthsToAdd = 3) {
-    const maxDate = new Date();
-    maxDate.setMonth(maxDate.getMonth() + monthsToAdd);
-    const year = maxDate.getFullYear();
-    const month = String(maxDate.getMonth() + 1).padStart(2, '0');
-    const day = String(maxDate.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  const today = getTodayString();
-  const maxDateStr = getMaxDateString();
-
-  const barber = useMemo(() => {
-    const result = params.barber ? JSON.parse(params.barber) : null;
-    console.log('🔍 AppointmentBooking - Parsed barber:', result);
-    return result;
-  }, [params.barber]);
-
-  useEffect(() => {
-    const fetchSlots = async () => {
-      if (!barber?.id || !selectedDate) {
-        setAvailableSlots([]);
-        return;
-      }
-
-      try {
-        setLoadingSlots(true);
-        setError('');
-        console.log("🔄 Fetching slots for", barber.id, "on", selectedDate);
-        const slots = await getBarberAvailability(barber.id, selectedDate);
-        setAvailableSlots(Array.isArray(slots) ? slots : []);
-      } catch (err) {
-        console.error('Error fetching available slots:', err);
-        setAvailableSlots([]);
-        setError('Unable to load time slots');
-      } finally {
-        setLoadingSlots(false);
-      }
-    };
-
-    fetchSlots();
-  }, [barber?.id, selectedDate]);
-
-  const handleDateSelect = (date) => {
-    setSelectedDate(date.dateString);
-    setSelectedSlot('');
-  };
-
-  const handleTimeSelect = (time) => {
-    setSelectedSlot(time);
-  };
-
-  const handleBookAppointment = async () => {
-    if (!selectedDate || !selectedSlot) {
-      Alert.alert('Error', 'Please select both date and time for your appointment');
-      return;
-    }
-
-    if (!barber || !service) {
-      Alert.alert('Error', 'Barber or Service details are missing.');
-      return;
-    }
-
+  const load = useCallback(async () => {
     try {
-      setLoading(true);
-      setError('');
-      
-      if (!currentUser) {
-        Alert.alert('Error', 'You must be logged in to book an appointment.');
-        setLoading(false);
-        router.replace('/(auth)/login');
+      if (!barberId) {
+        Alert.alert('Error', 'Missing barber ID');
         return;
       }
-
-      const profile = await getUserProfile(currentUser.uid);
-      const customerName = profile?.name || 'Customer';
-
-      const appointmentData = {
-        customerId: currentUser.uid,
-        barberId: barber.id,
-        serviceId: service.id,
-        serviceName: service.name,
-        servicePrice: service.price,
-        date: selectedDate,
-        time: selectedSlot,
-        barberName: barber.name,
-        customerName,
-      };
-
-      console.log('📅 Booking appointment with data:', appointmentData);
-
-      const appointment = await createAppointment(appointmentData);
-
-      router.push({
-        pathname: '/(app)/(customer)/appointment-confirmation',
-        params: {
-          appointment: JSON.stringify(appointment),
-          barber: JSON.stringify(barber),
-          service: JSON.stringify(service),
-        },
-      });
-    } catch (error) {
-      console.error('Error booking appointment:', error);
-      setError('Failed to book appointment. Please try again.');
+      const [avail, user] = await Promise.all([
+        getBarberAvailability(barberId),
+        getUserProfile(barberId) // if you meant current user, adjust to auth.currentUser.uid
+      ]);
+      setBarberAvailability(avail || {});
+      setUserProfile(user || {});
+    } catch (e) {
+      Alert.alert('Load Error', e.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [barberId]);
 
-  const renderTimeSlots = () => {
-    if (loadingSlots) {
-      return (
-        <View style={styles.centered}>
-          <ActivityIndicator size="small" color="#2196F3" />
-          <Text style={styles.loadingText}>Loading available times...</Text>
-        </View>
-      );
+  useEffect(() => { load(); }, [load]);
+
+  const days = useMemo(() => buildNextDays(30), []);
+  const selectedKey = dateKey(selectedDate);
+
+  const slotsForDay = useMemo(() => {
+    const avail = barberAvailability?.[selectedKey];
+    if (Array.isArray(avail) && avail.length) return avail;
+    return DEFAULT_SLOTS; // fallback if none stored
+  }, [barberAvailability, selectedKey]);
+
+  async function submit() {
+    if (!selectedSlot) {
+      Alert.alert('Select a time slot first');
+      return;
     }
-
-    if (error && availableSlots.length === 0) {
-      return (
-        <View style={styles.centered}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      );
+    try {
+      setSubmitting(true);
+      const startISO = `${selectedKey}T${selectedSlot}:00.000Z`;
+      await createAppointment({
+        barberId,
+        date: selectedKey,
+        time: selectedSlot,
+        start: startISO
+      });
+      Alert.alert('Success', 'Appointment booked.');
+      router.back();
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSubmitting(false);
     }
+  }
 
-    if (availableSlots.length === 0 && selectedDate) {
-      return (
-        <View style={styles.centered}>
-          <Text style={styles.noSlotsText}>No available slots for this date</Text>
-        </View>
-      );
-    }
-
+  if (loading) {
     return (
-      <View style={styles.timeSlotsContainer}>
-        {availableSlots.map((time) => (
-          <TouchableOpacity
-            key={time}
-            style={[
-              styles.timeSlot,
-              selectedSlot === time && styles.selectedTimeSlot,
-            ]}
-            onPress={() => handleTimeSelect(time)}
-          >
-            <Text
-              style={[
-                styles.timeSlotText,
-                selectedSlot === time && styles.selectedTimeSlotText,
-              ]}
-            >
-              {time}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
-  if (!barber || !service) {
-    console.log('❌ AppointmentBooking - Missing data:', { barber, service });
-    return (
-      <View style={styles.centered}>
-        <Ionicons name="alert-circle-outline" size={64} color="#f44336" />
-        <Text style={styles.errorText}>
-          {error || `Missing data: ${!barber ? 'barber' : ''} ${!service ? 'service' : ''}`}
-        </Text>
-        <TouchableOpacity onPress={() => router.back()} style={styles.retryButton}>
-          <Text style={styles.retryButtonText}>Go Back</Text>
-        </TouchableOpacity>
+      <View style={styles.center}>
+        <ActivityIndicator />
+        <Text style={styles.loading}>Loading...</Text>
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.serviceInfoCard}>
-        <Text style={styles.serviceInfoTitle}>Booking Details</Text>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Barber:</Text>
-          <Text style={styles.serviceInfoValue}>{barber.name}</Text>
-        </View>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Service:</Text>
-          <Text style={styles.serviceInfoValue}>{service.name}</Text>
-        </View>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Duration:</Text>
-          <Text style={styles.serviceInfoValue}>{service.duration} min</Text>
-        </View>
-        <View style={styles.serviceInfoRow}>
-          <Text style={styles.serviceInfoLabel}>Price:</Text>
-          <Text style={styles.serviceInfoValue}>${service.price.toFixed(2)}</Text>
-        </View>
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={22} color="#222" />
+        </TouchableOpacity>
+        <Text style={styles.header}>Book Appointment</Text>
+        <View style={{ width: 32 }} />
       </View>
 
-      <View style={styles.sectionContainer}>
-        <Text style={styles.sectionTitle}>Select Date</Text>
-        <Calendar
-          minDate={today}
-          maxDate={maxDateStr}
-          onDayPress={handleDateSelect}
-          markedDates={{
-            [selectedDate]: { selected: true, selectedColor: '#2196F3' },
-          }}
-          theme={{
-            todayTextColor: '#2196F3',
-            arrowColor: '#2196F3',
-            dotColor: '#2196F3',
-            selectedDotColor: '#ffffff',
-          }}
-        />
-      </View>
+      <Text style={styles.section}>Select Date</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daysRow}>
+        {days.map(d => {
+          const k = dateKey(d);
+          const isSelected = k === selectedKey;
+          return (
+            <TouchableOpacity
+              key={k}
+              style={[styles.dayChip, isSelected && styles.dayChipSelected]}
+              onPress={() => { setSelectedDate(d); setSelectedSlot(null); }}
+            >
+              <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
+                {d.toLocaleDateString(undefined, { weekday: 'short' })}
+              </Text>
+              <Text style={[styles.dayDate, isSelected && styles.dayTextSelected]}>
+                {d.getDate()}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
-      {selectedDate && (
-        <View style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Select Time</Text>
-          {renderTimeSlots()}
-        </View>
-      )}
+      <Text style={styles.section}>Available Times</Text>
+      <View style={styles.slotsWrap}>
+        {slotsForDay.map(slot => {
+          const active = slot === selectedSlot;
+          return (
+            <TouchableOpacity
+              key={slot}
+              style={[styles.slot, active && styles.slotActive]}
+              onPress={() => setSelectedSlot(slot)}
+            >
+              <Text style={[styles.slotText, active && styles.slotTextActive]}>{slot}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
       <TouchableOpacity
-        style={[
-          styles.bookButton,
-          (!selectedDate || !selectedSlot || loading) && styles.disabledButton,
-        ]}
-        onPress={handleBookAppointment}
-        disabled={!selectedDate || !selectedSlot || loading}
+        disabled={!selectedSlot || submitting}
+        style={[styles.submitBtn, (!selectedSlot || submitting) && styles.submitBtnDisabled]}
+        onPress={submit}
       >
-        {loading ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Text style={styles.bookButtonText}>Book Appointment</Text>
-        )}
+        <Text style={styles.submitText}>
+          {submitting ? 'Booking...' : selectedSlot ? `Book ${selectedSlot}` : 'Select a Time'}
+        </Text>
       </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  serviceInfoCard: { margin: 16, padding: 16, backgroundColor: '#f5f5f5', borderRadius: 8, borderWidth: 1, borderColor: '#ddd' },
-  serviceInfoTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  serviceInfoRow: { flexDirection: 'row', marginBottom: 8 },
-  serviceInfoLabel: { fontWeight: '500', width: 80 },
-  serviceInfoValue: { flex: 1 },
-  sectionContainer: { margin: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 12 },
-  centered: { alignItems: 'center', justifyContent: 'center', padding: 20 },
-  loadingText: { marginTop: 8, color: '#666' },
-  errorText: { color: '#f44336', textAlign: 'center', marginTop: 10 },
-  retryButton: { marginTop: 16, backgroundColor: '#2196F3', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 4 },
-  retryButtonText: { color: '#fff', fontWeight: 'bold' },
-  noSlotsText: { color: '#666', textAlign: 'center' },
-  timeSlotsContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
-  timeSlot: { backgroundColor: '#f5f5f5', borderRadius: 4, padding: 12, margin: 4, borderWidth: 1, borderColor: '#ddd' },
-  selectedTimeSlot: { backgroundColor: '#2196F3', borderColor: '#2196F3' },
-  timeSlotText: { color: '#333' },
-  selectedTimeSlotText: { color: '#fff', fontWeight: 'bold' },
-  bookButton: { backgroundColor: '#2196F3', padding: 16, margin: 16, borderRadius: 8, alignItems: 'center' },
-  disabledButton: { backgroundColor: '#cccccc' },
-  bookButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  container: { padding: 16 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
+  loading: { marginTop: 12, fontSize: 16 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  backBtn: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: '#eee',
+    alignItems: 'center', justifyContent: 'center'
+  },
+  header: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '600' },
+  section: { fontSize: 16, fontWeight: '600', marginTop: 12, marginBottom: 8 },
+  daysRow: { marginBottom: 8 },
+  dayChip: {
+    width: 68, marginRight: 8, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: '#eee', alignItems: 'center'
+  },
+  dayChipSelected: { backgroundColor: '#222' },
+  dayText: { fontSize: 12, color: '#555' },
+  dayDate: { fontSize: 16, fontWeight: '600', color: '#333' },
+  dayTextSelected: { color: '#fff' },
+  slotsWrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  slot: {
+    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
+    backgroundColor: '#f1f1f1', margin: 4
+  },
+  slotActive: { backgroundColor: '#2563eb' },
+  slotText: { fontSize: 14, color: '#333' },
+  slotTextActive: { color: '#fff', fontWeight: '500' },
+  submitBtn: {
+    marginTop: 24, backgroundColor: '#2563eb', borderRadius: 10,
+    paddingVertical: 14, alignItems: 'center'
+  },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '600' }
 });
