@@ -3,7 +3,7 @@ import 'dotenv/config';
 export default {
   name: 'barber-clean',
   slug: 'barber-clean',
-  version: '1.0.0',
+  version: '1.0.1',
   orientation: 'portrait',
   icon: './assets/adaptive-icon.png',
   userInterfaceStyle: 'light',
@@ -17,10 +17,12 @@ export default {
   },
   assetBundlePatterns: ['**/*'],
   ios: {
-infoPlist: {
+    buildNumber: '65',
+    infoPlist: {
       NSCalendarsUsageDescription: "This app requires calendar access to schedule your appointments.",
       NSCalendarsFullAccessUsageDescription: "This app needs full access to your calendar to create and manage appointments.",
-    },    bundleIdentifier: 'com.ScheduleSync.barber',
+    },
+    bundleIdentifier: 'com.ScheduleSync.barber',
     supportsTablet: true,
   },
   android: {
