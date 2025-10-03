@@ -2,28 +2,44 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "development",
+      "env": {
+        "EXPO_PUBLIC_BUILD_TYPE": "development",
+        "EXPO_PUBLIC_IS_TESTFLIGHT": "false"
+      }
+    },
+    "development-simulator": {
+      "extends": "development",
+      "ios": {
+        "simulator": true
+      },
+      "channel": "development-simulator",
+      "env": {
+        "EXPO_PUBLIC_BUILD_TYPE": "development",
+        "EXPO_PUBLIC_IS_TESTFLIGHT": "false"
+      }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_BUILD_TYPE": "preview",
+        "EXPO_PUBLIC_IS_TESTFLIGHT": "true"
+      }
     },
     "production": {
-      "developmentClient": false,
-      "ios": {
-        "simulator": false,
-        "buildConfiguration": "Debug",
-        "autoIncrement": false,
-        "distribution": "internal"
-      },
-      "android": {
-        "buildType": "apk",
-        "autoIncrement": false,
-        "distribution": "internal"
-      }
+      "autoIncrement": false,
+      "channel": "production"
     },
     "simulator": {
       "ios": {
         "simulator": true
+      },
+      "channel": "simulator",
+      "env": {
+        "EXPO_PUBLIC_BUILD_TYPE": "development",
+        "EXPO_PUBLIC_IS_TESTFLIGHT": "false"
       }
     }
   },

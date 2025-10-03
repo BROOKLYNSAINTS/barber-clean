@@ -7,9 +7,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   SafeAreaView,
+  Alert,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../../../src/contexts/AuthContext';
-import { getFirestore, collection, doc, updateDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { getFirestore, collection, doc, updateDoc, query, orderBy, onSnapshot, getDoc } from 'firebase/firestore';
 import { app } from '../../../src/services/firebase';
 import moment from 'moment';
 import * as Notifications from 'expo-notifications';
@@ -20,13 +22,15 @@ export default function NotificationScreen() {
   const { currentUser } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     if (!currentUser?.uid) return;
 
+    // Change this query to use createdAt instead of timestamp
     const q = query(
       collection(db, 'users', currentUser.uid, 'notifications'),
-      orderBy('timestamp', 'desc')
+      orderBy('createdAt', 'desc')  // Change from 'timestamp' to 'createdAt'
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -35,7 +39,9 @@ export default function NotificationScreen() {
         ...doc.data(),
       }));
 
-      const activeNotifications = list.filter(notification => notification.status !== 'cancelled');
+      const activeNotifications = list.filter(notification => 
+        notification.status !== 'cancelled' && notification.type !== undefined
+      );
 
       setNotifications(activeNotifications);
       setLoading(false);
@@ -43,7 +49,7 @@ export default function NotificationScreen() {
       console.log('📬 Notifications updated:', activeNotifications.map(n => ({
         id: n.id,
         title: n.title,
-        timestamp: n.timestamp?.toDate?.()
+        createdAt: n.createdAt?.toDate?.() // Changed from timestamp to createdAt
       })));
     });
 
@@ -59,6 +65,60 @@ export default function NotificationScreen() {
       );
     } catch (error) {
       console.error('Error marking notification as read:', error);
+    }
+  };
+
+  // Add this function to fetch appointment details
+  const fetchAppointment = async (appointmentId) => {
+    try {
+      if (!appointmentId) {
+        console.log('No appointment ID provided');
+        return null;
+      }
+      
+      const appointmentRef = doc(db, 'appointments', appointmentId);
+      const appointmentSnap = await getDoc(appointmentRef);
+      
+      if (appointmentSnap.exists()) {
+        return {
+          id: appointmentSnap.id,
+          ...appointmentSnap.data()
+        };
+      } else {
+        console.log('No appointment found with ID:', appointmentId);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error fetching appointment:', error);
+      return null;
+    }
+  };
+
+  // Handle notification tap
+  const handleNotificationTap = async (notification) => {
+    // Mark as read first
+    await markAsRead(notification.id);
+    
+    // If it's an appointment notification, navigate to details
+    if (notification.appointmentId) {
+      try {
+        const appointmentData = await fetchAppointment(notification.appointmentId);
+        
+        if (appointmentData) {
+          console.log('Navigating to appointment details:', appointmentData.id);
+          router.push({
+            pathname: '/(app)/(customer)/appointment-details',
+            params: {
+              appointment: JSON.stringify(appointmentData)
+            }
+          });
+        } else {
+          Alert.alert('Appointment Not Found', 'The appointment details could not be found.');
+        }
+      } catch (error) {
+        console.error('Error handling notification tap:', error);
+        Alert.alert('Error', 'There was a problem viewing appointment details.');
+      }
     }
   };
 
@@ -91,7 +151,7 @@ export default function NotificationScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[styles.notification, !item.read && styles.unread]}
-            onPress={() => markAsRead(item.id)}
+            onPress={() => handleNotificationTap(item)}
           >
             <Text style={styles.title}>{item.title}</Text>
             <Text style={styles.body}>{item.body}</Text>
@@ -101,7 +161,8 @@ export default function NotificationScreen() {
               </Text>
             )}
             <Text style={styles.timestamp}>
-              {moment(item.timestamp?.toDate()).fromNow()}
+              {moment(item.createdAt?.toDate()).fromNow()} 
+              {/* Changed from item.timestamp to item.createdAt */}
             </Text>
           </TouchableOpacity>
         )}

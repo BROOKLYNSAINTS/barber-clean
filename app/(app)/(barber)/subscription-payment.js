@@ -100,7 +100,7 @@ const SubscriptionPaymentScreen = () => {
             customerEphemeralKeySecret: ephemeralKeySecret,
             paymentIntentClientSecret: paymentIntentClientSecret,
             allowsDelayedPaymentMethods: true,
-            returnURL: "barberapp://stripe-redirect", // Ensure this is configured in your app
+            returnURL: "barberscheduler://subscription-return",
             defaultBillingDetails: {
                 name: profile?.name || "Valued Customer",
             }

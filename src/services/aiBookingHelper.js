@@ -12,7 +12,7 @@ import {
   addDoc
 } from 'firebase/firestore';
 import { generateChatResponse } from './openai';
-import * as Calendar from 'expo-calendar';
+import * as Calendar from '@/stubs/calendar'; // was 'expo-calendar', now stubbed
 import * as Notifications from 'expo-notifications';
 
 

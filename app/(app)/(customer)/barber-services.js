@@ -1,58 +1,91 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList, ActivityIndicator, Image } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, Image, StyleSheet, ActivityIndicator, TouchableOpacity, FlatList, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getBarberServices, getBarberReviews } from '@/services/firebase';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
 import DebugUser from '@/components/DebugUser';
+import { getFirestore, collection, query, where, getDocs } from 'firebase/firestore';
+import { app } from '@/services/firebase';
+import { getStorage, ref as storageRef, getDownloadURL } from 'firebase/storage';
 
-
+const db = getFirestore(app);
 
 export default function BarberServicesScreen() {
-/*return (
-    <View style={{ padding: 20 }}>
-      <DebugUser screenName="Barber Services" />
-      <Text>📋 Welcome to the Barber Services screen!</Text>
-    </View>
-  );  
-  
-  
-  const { currentUser } = useAuth(); // ✅ safe only at top level of a React component*/
+  const { barberId, barberName, barber: barberJson } = useLocalSearchParams();
   const router = useRouter();
-  const { barber: barberParam } = useLocalSearchParams();
-  const parsedBarber = barberParam ? JSON.parse(barberParam) : null;
-
-  const [barber, setBarber] = useState(parsedBarber);
+  const [barber, setBarber] = useState(null);
   const [services, setServices] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('services');
+  const [imageUri, setImageUri] = useState(null);
 
+  // Parse barber from route once
   useEffect(() => {
-    if (!parsedBarber || !parsedBarber.id) {
-      setError('Barber ID is missing from route parameters.');
-      setLoading(false);
-      return;
+    try {
+      if (barberJson) {
+        const parsed = JSON.parse(barberJson);
+        setBarber(parsed);
+      } else {
+        setBarber(prev => prev ?? { id: barberId, name: barberName });
+      }
+    } catch {
+      setBarber({ id: barberId, name: barberName });
     }
-    console.log("🔍 Fetching services for barber ID:", parsedBarber.id, parsedBarber.name);
+  }, [barberJson, barberId, barberName]);
+
+  const ratingAvg = useMemo(() => {
+    if (!reviews.length) return 0;
+    const sum = reviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0);
+    return sum / reviews.length;
+  }, [reviews]);
+
+  // FIX: remove undefined "params" log
+  // console.log('Barber services screen params:', params);
+  console.log('Barber services route:', { barberId, barberName });
+  console.log('Using barber data:', barber);
+
+  // Ensure we have a barber ID
+  useEffect(() => {
+    if (!barber?.id && !barberId) {
+      console.error('No barber ID available');
+      Alert.alert(
+        'Error',
+        'Could not find barber information. Please try again.',
+        [{ text: 'Go Back', onPress: () => router.back() }]
+      );
+    }
+  }, [barber, barberId, router]);
+
+  // FIX: fetch services and reviews using the resolved ID (no parsedBarber)
+  useEffect(() => {
+    const id = barber?.id || barberId;
+    if (!id) return;
+
     const fetchData = async () => {
       try {
         setLoading(true);
         setError('');
 
-        const servicesData = await getBarberServices(parsedBarber.id);
-        setServices(servicesData);
-        console.log("📦 Services Data for Barber ID", parsedBarber.id, ":", servicesData);
+        const servicesData = await getBarberServices(id);
+        setServices(servicesData || []);
+        console.log('📦 Services Data for Barber ID', id, ':', servicesData);
 
-        const reviewsData = await getBarberReviews(parsedBarber.id);
-        setReviews(reviewsData);
-        console.log("🗒️ Reviews Data for Barber ID", parsedBarber.id, ":", reviewsData);
+        // Show spinner in header while reviews load
+        setReviewsLoading(true);
+        const reviewsData = await getBarberReviews(id);
+        setReviews(reviewsData || []);
+        setReviewsLoading(false);
+        console.log('🗒️ Reviews Data for Barber ID', id, ':', reviewsData);
 
-        setBarber({
-          ...parsedBarber,
-          reviewCount: reviewsData.length,
-        });
+        // Ensure barber object exists and attach reviewCount
+        setBarber(prev => ({
+          ...(prev || { id, name: barberName }),
+          reviewCount: (reviewsData || []).length,
+        }));
       } catch (err) {
         console.error('Error fetching barber data:', err);
         setError('Failed to load barber information');
@@ -62,31 +95,72 @@ export default function BarberServicesScreen() {
     };
 
     fetchData();
-  }, []);
-  const handleSelectService = (services) => {
-   // if (!currentUser) return;
+  }, [barber?.id, barberId, barberName]);
+
+  const handleSelectService = (service) => {
+    const selectedBarberId = barber?.id || barberId;
+    if (!selectedBarberId) {
+      Alert.alert('Error', 'Missing barber information');
+      return;
+    }
+
+    // Require valid duration and price
+    const hasDuration = Number.isFinite(Number(service.duration)) && Number(service.duration) > 0;
+    const hasPrice = Number.isFinite(Number(service.price)) && Number(service.price) >= 0;
+
+    if (!hasDuration) {
+      Alert.alert('Missing Duration', 'This service has no duration set. Please select another service.');
+      return;
+    }
+    if (!hasPrice) {
+      Alert.alert('Missing Price', 'This service has no price set. Please select another service.');
+      return;
+    }
+
     router.push({
       pathname: '/(app)/(customer)/appointment-booking',
       params: {
-        barber: JSON.stringify(barber),
-        service: JSON.stringify(services),
-      },
+        barberId: selectedBarberId,
+        barberName: barber?.name || barberName,
+        serviceId: service.id,
+        serviceName: service.name,
+        servicePrice: String(service.price),
+        serviceDuration: String(service.duration) // REQUIRED
+      }
     });
   };
 
-  const renderServiceItem = ({ item }) => (
-    <TouchableOpacity style={styles.serviceCard} onPress={() => handleSelectService(item)}>
-      <View style={styles.serviceInfo}>
-        <Text style={styles.serviceName}>{item.name}</Text>
-        {item.photo && <Image source={{ uri: item.photo }} style={styles.servicePhoto} />}
-        <Text style={styles.serviceDescription}>{item.description}</Text>
-      </View>
-      <View style={styles.servicePriceContainer}>
-        <Text style={styles.servicePrice}>${item.price.toFixed(2)}</Text>
-        <Ionicons name="chevron-forward" size={24} color="#2196F3" />
-      </View>
-    </TouchableOpacity>
-  );
+  const renderServiceItem = ({ item }) => {
+    const img = item.photo || item.photoUrl || 'https://via.placeholder.com/48';
+    const durationNum = Number(item.duration);
+    const priceNum = Number(item.price);
+
+    return (
+      <TouchableOpacity style={styles.serviceRow} onPress={() => handleSelectService(item)}>
+        <Image source={{ uri: img }} style={styles.serviceThumb} />
+
+        <Text style={styles.serviceRowName} numberOfLines={1}>
+          {item.name}
+        </Text>
+
+        <View style={styles.metaPill}>
+          <Ionicons name="time-outline" size={14} color="#555" />
+          <Text style={styles.metaText}>
+            {Number.isFinite(durationNum) ? `${durationNum} min` : '—'}
+          </Text>
+        </View>
+
+        <View style={styles.metaPill}>
+          <Ionicons name="pricetag-outline" size={14} color="#555" />
+          <Text style={styles.metaText}>
+            {Number.isFinite(priceNum) ? `$${priceNum.toFixed(2)}` : '—'}
+          </Text>
+        </View>
+
+        <Ionicons name="chevron-forward" size={22} color="#2196F3" />
+      </TouchableOpacity>
+    );
+  };
 
   const renderReviewItem = ({ item }) => (
     <View style={styles.reviewCard}>
@@ -112,6 +186,44 @@ export default function BarberServicesScreen() {
     </View>
   );
 
+  // Resolve barber image from multiple possible fields and gs:// URLs
+  useEffect(() => {
+    const urlCandidate =
+      barber?.image ||
+      barber?.imageUrl ||
+      barber?.photo ||
+      barber?.photoURL ||
+      barber?.avatar ||
+      barber?.avatarUrl ||
+      barber?.profileImage ||
+      null;
+
+    let cancelled = false;
+
+    const resolveImage = async () => {
+      try {
+        if (!urlCandidate) {
+          if (!cancelled) setImageUri(null);
+          return;
+        }
+        if (urlCandidate.startsWith('gs://')) {
+          const storage = getStorage(app);
+          const ref = storageRef(storage, urlCandidate);
+          const dl = await getDownloadURL(ref);
+          if (!cancelled) setImageUri(dl);
+        } else {
+          if (!cancelled) setImageUri(urlCandidate);
+        }
+      } catch (e) {
+        console.warn('Failed to resolve barber image URL:', e?.message || e);
+        if (!cancelled) setImageUri(null);
+      }
+    };
+
+    resolveImage();
+    return () => { cancelled = true; };
+  }, [barber]);
+
   if (!barber) {
     return (
       <View style={styles.centered}>
@@ -126,28 +238,19 @@ export default function BarberServicesScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.barberHeader}>
-        <View style={styles.barberImageContainer}>
-          {barber.photoURL ? (
-            <Image source={{ uri: barber.photoURL }} style={styles.barberImage} />
+      <View style={styles.header}>
+        <Image
+          source={{ uri: imageUri || 'https://via.placeholder.com/120' }}
+          style={styles.avatar}
+        />
+        <View style={styles.headerInfo}>
+          <Text style={styles.barberName}>{barber?.name || barberName || 'Barber'}</Text>
+          {reviewsLoading ? (
+            <ActivityIndicator size="small" />
           ) : (
-            <View style={styles.barberImagePlaceholder}>
-              <Text style={styles.barberImagePlaceholderText}>
-                {barber.name ? barber.name.charAt(0).toUpperCase() : 'B'}
-              </Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.barberInfo}>
-          <Text style={styles.barberName}>{barber.name}</Text>
-          <Text style={styles.barberAddress}>{barber.address}</Text>
-          <Text style={styles.barberPhone}>{barber.phone}</Text>
-          {barber.rating !== undefined && barber.rating !== null && (
-            <View style={styles.ratingContainer}>
-              <Text style={styles.ratingText}>{barber.rating.toFixed(1)}</Text>
-              <Ionicons name="star" size={16} color="#FFD700" />
-              <Text style={styles.reviewCount}>({barber.reviewCount || 0} reviews)</Text>
-            </View>
+            <Text style={styles.reviewsText}>
+              {reviews.length > 0 ? `⭐ ${ratingAvg.toFixed(1)} • ${reviews.length} reviews` : 'No reviews yet'}
+            </Text>
           )}
         </View>
       </View>
@@ -208,10 +311,15 @@ export default function BarberServicesScreen() {
       )}
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
+  header: { flexDirection: 'row', padding: 16, alignItems: 'center', backgroundColor: '#fff' },
+  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#eee' },
+  headerInfo: { marginLeft: 12, flex: 1 },
+  barberName: { fontSize: 18, fontWeight: '700', color: '#222' },
+  reviewsText: { marginTop: 4, color: '#666' },
   barberHeader: { flexDirection: 'row', padding: 16, borderBottomWidth: 1, borderColor: '#eee' },
   barberImageContainer: { marginRight: 12 },
   barberImage: { width: 80, height: 80, borderRadius: 40 },
@@ -225,7 +333,6 @@ const styles = StyleSheet.create({
   },
   barberImagePlaceholderText: { fontSize: 24, color: '#fff' },
   barberInfo: { flex: 1, justifyContent: 'center' },
-  barberName: { fontSize: 18, fontWeight: 'bold' },
   barberAddress: { fontSize: 14, color: '#777' },
   barberPhone: { fontSize: 14, color: '#777' },
   ratingContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
@@ -236,22 +343,45 @@ const styles = StyleSheet.create({
   tabButtonText: { fontSize: 16, color: '#888' },
   activeTabButton: { borderBottomWidth: 2, borderBottomColor: '#2196F3' },
   activeTabButtonText: { color: '#2196F3', fontWeight: 'bold' },
-  serviceCard: {
+  serviceRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 24,   // was 12 → taller row
+    minHeight: 80,         // ensure roughly double height
     marginHorizontal: 16,
-    marginVertical: 8,
+    marginVertical: 6,
     backgroundColor: '#f9f9f9',
-    borderRadius: 8,
+    borderRadius: 10,
   },
-  serviceInfo: { flex: 1 },
-  serviceName: { fontSize: 16, fontWeight: 'bold', marginBottom: 4 },
-  serviceDescription: { fontSize: 14, color: '#666' },
-  servicePhoto: { width: '100%', height: 120, marginVertical: 8, borderRadius: 8 },
-  servicePriceContainer: { flexDirection: 'row', alignItems: 'center' },
-  servicePrice: { fontSize: 16, color: '#2196F3', marginRight: 8 },
+  serviceThumb: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    backgroundColor: '#eee',
+  },
+  serviceRowName: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 15,
+    fontWeight: '700',     // was '600' → bold
+    color: '#222',
+  },
+  metaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#eef3ff',
+    borderRadius: 12,
+  },
+  metaText: {
+    fontSize: 16,         // was 12 → larger font for duration/price
+    color: '#333',
+    fontWeight: '700',
+  },
   reviewCard: { padding: 16, marginHorizontal: 16, marginVertical: 8, backgroundColor: '#f2f2f2', borderRadius: 8 },
   reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
   reviewAuthor: { fontWeight: 'bold' },

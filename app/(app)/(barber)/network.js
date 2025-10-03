@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator,
+  Alert, Linking, KeyboardAvoidingView, Platform, FlatList, RefreshControl
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getUserProfile, auth, getBarbersByZipcode } from '@/services/firebase';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -55,6 +58,7 @@ const BarberNetworkScreen = () => {
       setError('');
       const barbersData = await getBarbersByZipcode(zip);
       const filteredBarbers = barbersData.filter(barber => barber.id !== currentUserId);
+      console.log('Total barbers for scrolling:', filteredBarbers.length); // <-- ADD THIS
       setBarbers(filteredBarbers);
     } catch (err) {
       console.error('Error fetching barbers:', err);
@@ -161,7 +165,19 @@ const BarberNetworkScreen = () => {
           <Text style={styles.viewProfileButtonText}>View Profile</Text>
         </TouchableOpacity>
       </View>
+      {/* REMOVE the Report Issue button completely if you see it, e.g.: */}
+      {/* <QuickIssueButton screen="BarberNetworkScreen" userEmail={profile?.email} /> */}
     </Card>
+  );
+
+  // Keep this as a function (already defined)
+  const ListHeader = () => (
+    <>
+      <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
+        <Text style={styles.headerTitle}>🌐 Barber Network</Text>
+        <Text style={styles.headerSubtitle}>Connect with barbers in your area</Text>
+      </View>
+    </>
   );
 
   if (loading && !refreshing) {
@@ -174,50 +190,74 @@ const BarberNetworkScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
-        <Text style={styles.headerTitle}>🌐 Barber Network</Text>
-        <Text style={styles.headerSubtitle}>Connect with barbers in your area</Text>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Ionicons name="search-outline" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            value={zipcode}
-            onChangeText={setZipcode}
-            placeholder="Enter 5-digit zipcode"
-            placeholderTextColor={theme.colors.textPlaceholder}
-            keyboardType="numeric"
-            maxLength={5}
-          />
+    <SafeAreaView style={[styles.container, { flex: 1 }]}>
+      <View style={{ flex: 1 }}>
+        {/* Add the search here - OUTSIDE the FlatList */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputContainer}>
+            <Ionicons name="search-outline" size={20} color={theme.colors.textSecondary} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: 'black' }]}
+              value={zipcode}
+              onChangeText={(text) => {
+                console.log('ZIP changed:', text);
+                setZipcode(text);
+              }}
+              placeholder="Enter 5-digit zipcode"
+              placeholderTextColor={theme.colors.textPlaceholder}
+              keyboardType="number-pad"
+              maxLength={5}
+              returnKeyType="search"
+              onSubmitEditing={handleSearch}
+              keyboardAppearance="default"
+              autoCorrect={false}
+              editable={true}
+              blurOnSubmit={true}
+            />
+          </View>
+          <TouchableOpacity
+            onPress={handleSearch}
+            disabled={searching}
+            style={[styles.searchButton, searching ? { opacity: 0.7 } : {}]}
+          >
+            {searching ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={{ color: '#fff', fontWeight: 'bold' }}>Search</Text>
+            )}
+          </TouchableOpacity>
         </View>
-        <Button
-          title={searching ? '' : "Search"}
-          onPress={handleSearch}
-          disabled={searching}
-          style={styles.searchButton}
-          icon={searching ? <ActivityIndicator size="small" color={theme.colors.white} /> : null}
+
+        {error && !loading && (
+          <View style={styles.errorContainer}>
+            <Ionicons name="alert-circle-outline" size={24} color={theme.colors.danger} />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Modify ListHeader to not include the search */}
+        <FlatList
+          data={barbers}
+          renderItem={renderBarberItem}
+          keyExtractor={item => item.id}
+          ListHeaderComponent={() => (
+            <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
+              <Text style={styles.headerTitle}>🌐 Barber Network</Text>
+              <Text style={styles.headerSubtitle}>Connect with barbers in your area</Text>
+            </View>
+          )}
+          showsVerticalScrollIndicator={true}
+          contentContainerStyle={{ paddingHorizontal: 16 }}
+          style={{ flex: 1 }}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+          }
+          windowSize={5}
+          maxToRenderPerBatch={5}
+          updateCellsBatchingPeriod={30}
+          removeClippedSubviews={false}
         />
       </View>
-
-      {error && !loading && (
-        <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={24} color={theme.colors.danger} />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-
-      <FlatList
-        data={barbers}
-        renderItem={renderBarberItem}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContainer}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-        showsVerticalScrollIndicator={false}
-      />
     </SafeAreaView>
   );
 };
@@ -250,6 +290,8 @@ const styles = StyleSheet.create({
   messageButtonText: { color: '#fff', fontWeight: 'bold', marginLeft: 6 },
   viewProfileButton: { flex: 1, marginLeft: 6, borderWidth: 1, borderColor: '#007BFF', paddingVertical: 12, borderRadius: 8, flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   viewProfileButtonText: { color: '#007BFF', fontWeight: 'bold' },
+  quickReport: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderTopColor: '#e0e0e0', marginTop: 8 },
+  quickReportText: { fontSize: 14, color: '#ff6b6b', marginLeft: 8 },
 });
 
 export default BarberNetworkScreen;

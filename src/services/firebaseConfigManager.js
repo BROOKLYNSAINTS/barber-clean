@@ -2,7 +2,6 @@
 import { Platform } from 'react-native';
 import * as Constants from 'expo-constants';
 import devConfig from './firebaseConfig'; // Import test environment config
-import prodConfig from './firebaseConfig.prod'; // Import production environment config
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // By default, we use the development database for testing

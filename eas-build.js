@@ -1,65 +1,34 @@
 const fs = require('fs');
 const path = require('path');
 
-// Read the existing .env file
-const envPath = path.resolve(__dirname, '.env');
-let envContent = '';
+// This script runs during EAS Build to ensure environment variables are available
+function setupEnv() {
+  console.log('Setting up environment variables for EAS build...');
+  
+  // Create a new .env file with hardcoded values for the build
+  // These will be used only during build time and won't be committed to git
+  const envContent = `
+# Firebase Development Environment
+EXPO_PUBLIC_FIREBASE_DEV_API_KEY=AIzaSyD3FFprDwIZwECR5TkYCeOkiCUNGLp6qQM
+EXPO_PUBLIC_FIREBASE_DEV_AUTH_DOMAIN=barber-38b88.firebaseapp.com
+EXPO_PUBLIC_FIREBASE_DEV_PROJECT_ID=barber-38b88
+EXPO_PUBLIC_FIREBASE_DEV_STORAGE_BUCKET=barber-38b88.appspot.com
+EXPO_PUBLIC_FIREBASE_DEV_MESSAGING_SENDER_ID=910680290414
+EXPO_PUBLIC_FIREBASE_DEV_APP_ID=1:910680290414:web:606ee1c0e84c32e6bfcc8c
+EXPO_PUBLIC_FIREBASE_DEV_MEASUREMENT_ID=G-B6HMP9YK92
 
-try {
-  envContent = fs.readFileSync(envPath, 'utf8');
-} catch (error) {
-  console.warn('No .env file found, creating a new one from secrets');
+# Stripe Test Keys
+EXPO_PUBLIC_STRIPE_TEST_PUBLISHABLE_KEY=pk_test_51RvYLr4MureyHjXxtQW5NTFkSww0Q0seO7oTPzXTTMN1s41g0tBp74EsrPKxB7xthR9zSbGegMOmZcIBe97SHXTi00ut28z7xS
+EXPO_PUBLIC_STRIPE_BACKEND_URL=https://barber-backend-ten.vercel.app
+`;
+  
+  const envPath = path.join(__dirname, '.env');
+  fs.writeFileSync(envPath, envContent.trim());
+  console.log('Created .env file with development values for build');
+  
+  // Log the values to confirm they're set
+  console.log('Environment variables set:');
+  console.log('EXPO_PUBLIC_FIREBASE_DEV_API_KEY exists:', !!process.env.EXPO_PUBLIC_FIREBASE_DEV_API_KEY);
 }
 
-// Add or replace environment variables from EAS Secrets
-const secretsToAdd = [
-  'FIREBASE_DEV_API_KEY',
-  'FIREBASE_DEV_AUTH_DOMAIN',
-  'FIREBASE_DEV_PROJECT_ID',
-  'FIREBASE_DEV_STORAGE_BUCKET',
-  'FIREBASE_DEV_MESSAGING_SENDER_ID',
-  'FIREBASE_DEV_APP_ID',
-  'FIREBASE_DEV_MEASUREMENT_ID',
-  'FIREBASE_PROD_API_KEY',
-  'FIREBASE_PROD_AUTH_DOMAIN',
-  'FIREBASE_PROD_PROJECT_ID',
-  'FIREBASE_PROD_STORAGE_BUCKET',
-  'FIREBASE_PROD_MESSAGING_SENDER_ID',
-  'FIREBASE_PROD_APP_ID',
-  'FIREBASE_PROD_MEASUREMENT_ID',
-  'STRIPE_PUBLISHABLE_KEY',
-  'OPENAI_API_KEY',
-];
-
-// For each environment variable that exists in process.env, add or replace it in envContent
-let newEnvContent = envContent;
-let envAdded = false;
-
-secretsToAdd.forEach(secret => {
-  if (process.env[secret]) {
-    // Check if the variable already exists in .env
-    const regex = new RegExp(`^${secret}=.*`, 'm');
-    const exists = regex.test(newEnvContent);
-
-    if (exists) {
-      // Replace existing variable
-      newEnvContent = newEnvContent.replace(
-        regex, 
-        `${secret}=${process.env[secret]}`
-      );
-    } else {
-      // Add new variable
-      newEnvContent += `\n${secret}=${process.env[secret]}`;
-    }
-    envAdded = true;
-  }
-});
-
-// If any environment variables were added or modified, write the new content
-if (envAdded) {
-  console.log('Updating .env with EAS Secrets...');
-  fs.writeFileSync(envPath, newEnvContent.trim() + '\n');
-  console.log('.env file updated successfully');
-} else {
-  console.log('No EAS Secrets found to add to .env');
-}
+setupEnv();

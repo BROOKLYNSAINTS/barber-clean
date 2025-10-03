@@ -1,5 +1,18 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { registerUser, createUserProfile } from '@/services/firebase';
 import { useRouter } from 'expo-router';
 
@@ -8,6 +21,8 @@ const RegisterScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmVisible, setConfirmVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -24,137 +39,153 @@ const RegisterScreen = () => {
       setLoading(true);
       setError('');
       const user = await registerUser(email, password);
-      
-      // Create user profile
+
       await createUserProfile(user.uid, {
-        email: email,
+        email,
         userType: 'customer',
         createdAt: new Date().toISOString(),
       });
-      
-      // Navigate to profile setup
+
       router.push({ pathname: '(auth)/profile-setup', params: { userId: user.uid } });
-    } catch (error) {
-      console.error('Registration error:', error);
-      setError(error.message);
+    } catch (err) {
+      console.error('Registration error:', err);
+      setError(err?.message || 'Failed to create account');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Create Account</Text>
-      
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-      </View>
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your password"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
-      </View>
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Confirm Password</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Confirm your password"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-        />
-      </View>
-      
-      <TouchableOpacity 
-        style={styles.button} 
-        onPress={handleRegister}
-        disabled={loading}
-      >
-        <Text style={styles.buttonText}>
-          {loading ? 'Creating Account...' : 'Register'}
-        </Text>
-      </TouchableOpacity>
-      
-      <View style={styles.footer}>
-        <Text>Already have an account? </Text>
-        <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-          <Text style={styles.link}>Login</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.form}>
+            <Text style={styles.title}>Create Account</Text>
+
+            {!!error && <Text style={styles.errorText}>{error}</Text>}
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="you@example.com"
+                  placeholderTextColor="#6B7280"
+                  keyboardType="email-address"
+                  textContentType="emailAddress"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={email}
+                  onChangeText={setEmail}
+                  returnKeyType="next"
+                />
+              </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your password"
+                  placeholderTextColor="#6B7280"
+                  textContentType="password"
+                  secureTextEntry={!passwordVisible}
+                  autoCapitalize="none"
+                  value={password}
+                  onChangeText={setPassword}
+                  returnKeyType="next"
+                />
+                <TouchableOpacity
+                  onPress={() => setPasswordVisible(v => !v)}
+                  style={styles.toggleButton}
+                  hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                >
+                  <Ionicons name={passwordVisible ? 'eye-off' : 'eye'} size={22} color="#1F2937" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Confirm Password</Text>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm your password"
+                  placeholderTextColor="#6B7280"
+                  textContentType="password"
+                  secureTextEntry={!confirmVisible}
+                  autoCapitalize="none"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity
+                  onPress={() => setConfirmVisible(v => !v)}
+                  style={styles.toggleButton}
+                  hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+                >
+                  <Ionicons name={confirmVisible ? 'eye-off' : 'eye'} size={22} color="#1F2937" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleRegister}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>{loading ? 'Creating Account...' : 'Register'}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Already have an account? </Text>
+              <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
+                <Text style={styles.link}>Login</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 20,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: 15,
-  },
-  label: {
-    marginBottom: 5,
-    fontWeight: '500',
-  },
+  container: { flexGrow: 1, padding: 20, backgroundColor: '#fff', justifyContent: 'center' },
+  form: { width: '100%' },
+  title: { fontSize: 28, fontWeight: '800', marginBottom: 24, textAlign: 'center', color: '#111827' },
+  inputContainer: { marginBottom: 18 },
+  label: { marginBottom: 8, fontSize: 18, fontWeight: '700', color: '#111827' },
+  inputWrapper: { position: 'relative' },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    height: 56,
+    borderWidth: 2,
+    borderColor: '#1F2937',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingRight: 48,
+    fontSize: 18,
+    fontWeight: '700', // bold input text
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
   },
+  toggleButton: { position: 'absolute', right: 12, height: 56, justifyContent: 'center', alignItems: 'center' },
   button: {
-    backgroundColor: '#2196F3',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  footer: {
-    flexDirection: 'row',
+    backgroundColor: '#007bff',
+    height: 56,
+    borderRadius: 12,
     justifyContent: 'center',
-    marginTop: 20,
+    alignItems: 'center',
+    marginTop: 12,
   },
-  link: {
-    color: '#2196F3',
-    fontWeight: 'bold',
-  },
-  errorText: {
-    color: 'red',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
+  buttonDisabled: { backgroundColor: '#cccccc' },
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 22 },
+  footerText: { fontSize: 16, fontWeight: '600', color: '#333' },
+  link: { color: '#007bff', fontWeight: '700', fontSize: 16 },
+  errorText: { color: 'red', textAlign: 'center', marginBottom: 10, fontSize: 16, fontWeight: '600' },
 });
 
 export default RegisterScreen;

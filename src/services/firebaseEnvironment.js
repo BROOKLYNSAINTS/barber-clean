@@ -1,8 +1,7 @@
 // src/services/firebaseEnvironment.js
 import { Platform } from 'react-native';
-import * as Constants from 'expo-constants';
-import devConfig from './firebaseConfig'; // Import test environment config
-import prodConfig from './firebaseConfig.prod'; // Import production environment config
+import Constants from 'expo-constants';
+import { FIREBASE } from '@/config/env';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // By default, we use the development database for testing
@@ -63,32 +62,9 @@ const isAppStoreRelease = () => {
  * Determine if this is a TestFlight build
  */
 const isTestFlightBuild = () => {
-  // For environment simulation
-  if (__DEV__ && simulateTestFlight) {
-    console.log('🔧 Simulating TestFlight environment');
-    return true;
-  }
-  
-  // Check if this is a TestFlight build or Preview build (which should use dev database)
-  if (!__DEV__) {
-    // Try to detect if this is a TestFlight build
-    const isTestFlight = Constants?.manifest?.extra?.isTestFlight ||
-      Constants?.expoConfig?.extra?.isTestFlight;
-      
-    // Check for build channel/type (preview builds should use dev database)
-    const buildType = Constants?.manifest?.extra?.buildType ||
-      Constants?.expoConfig?.extra?.buildType ||
-      'unknown';
-    const isPreviewBuild = buildType === 'preview';
-      
-    // For React Native without Expo
-    const appStoreReceiptURL = global?.RNAppStoreReceipt || '';
-    const isActualTestFlight = appStoreReceiptURL.includes('sandboxReceipt');
-    
-    return isTestFlight || isActualTestFlight || isPreviewBuild;
-  }
-  
-  return false;
+  const extra = Constants.expoConfig?.extra || {};
+  // Check BOTH conditions to be safe
+  return extra.isTestFlight === true || extra.buildType === 'preview';
 };
 
 /**
@@ -182,6 +158,9 @@ export const setSimulateAppStore = async (simulate) => {
   console.log('📱 Now simulating App Store environment: Using PRODUCTION Firebase config (barberapp-prod-2d197)');
 };
 
+// Get Firebase config from app.config.js (which gets it from EAS secrets)
+const devConfigFromExpo = Constants.expoConfig?.extra?.firebaseDevConfig;
+
 /**
  * Get the appropriate Firebase configuration based on the current environment and settings
  * 
@@ -189,156 +168,26 @@ export const setSimulateAppStore = async (simulate) => {
  * In TestFlight: Always use test config (barber-38b88)
  * In App Store: Always use production config (barberapp-prod-2d197)
  */
-export const getFirebaseConfig = () => {
+const getFirebaseConfig = () => {
   try {
-    // First, validate the configurations to make sure they're valid
-    const isDevConfigValid = devConfig && devConfig.apiKey && devConfig.projectId;
-    const isProdConfigValid = prodConfig && prodConfig.apiKey && prodConfig.projectId;
+    // Get config from app.config.js
+    const extra = Constants.expoConfig?.extra || {};
     
-    console.log(`🔍 Config validation - Dev: ${isDevConfigValid ? 'Valid' : 'INVALID'}, Prod: ${isProdConfigValid ? 'Valid' : 'INVALID'}`);
+    console.log('🔥 Using development Firebase config from environment variables');
     
-    // EMULATOR MODE: When working with local emulators, always use development config
-    if (__DEV__ && devConfig.authDomain === 'localhost') {
-      console.log('🧪 EMULATOR MODE: Using development config with localhost authDomain');
-      return devConfig;
-    }
-    
-    // If the required config isn't valid, throw an error to trigger fallback
-    if (!isDevConfigValid && !isProdConfigValid) {
-      throw new Error('Both dev and prod Firebase configs are invalid');
-    }
-    
-    // If only one config is valid, use that regardless of environment
-    if (!isDevConfigValid && isProdConfigValid) {
-      console.log('⚠️ WARNING: Using production config because dev config is invalid');
-      return prodConfig;
-    }
-    if (isDevConfigValid && !isProdConfigValid) {
-      console.log('⚠️ WARNING: Using dev config because production config is invalid');
-      return devConfig;
-    }
-    
-    // Normal environment detection flow
-    // Check if this is a true production App Store release or simulation
-    if (isAppStoreRelease() || simulateAppStore) {
-      console.log('📱 APP STORE RELEASE: Using production Firebase config (barberapp-prod-2d197)');
-      return prodConfig;
-    }
-    
-    // In TestFlight or TestFlight simulation, always use test database
-    if (!__DEV__ || simulateTestFlight) {
-      console.log('🧪 TESTFLIGHT BUILD: Using TEST Firebase config (barber-38b88)');
-      return devConfig;
-    }
-    
-    // In local development, use the selected database based on preference
-    if (useProductionDb) {
-      console.log('🔧 DEVELOPMENT BUILD: Using PRODUCTION Firebase config (barberapp-prod-2d197)');
-      return prodConfig;
-    } else {
-      console.log('🔧 DEVELOPMENT BUILD: Using TEST Firebase config (barber-38b88)');
-      return devConfig;
-    }
-  } catch (error) {
-    console.error('❌ Error determining Firebase configuration:', error);
-    
-    // Get emergency fallback values from environment or use hard-coded values as last resort
-    const fallbackConfig = {
-      apiKey: process.env.FIREBASE_DEV_API_KEY || "AIzaSyD3FFprDwIZwECR5TkYCeOkiCUNGLp6qQM", 
-      authDomain: process.env.FIREBASE_DEV_AUTH_DOMAIN || "barber-38b88.firebaseapp.com",
-      projectId: process.env.FIREBASE_DEV_PROJECT_ID || "barber-38b88",
-      storageBucket: process.env.FIREBASE_DEV_STORAGE_BUCKET || "barber-38b88.appspot.com",
-      messagingSenderId: process.env.FIREBASE_DEV_MESSAGING_SENDER_ID || "910680290414",
-      appId: process.env.FIREBASE_DEV_APP_ID || "1:910680290414:web:606ee1c0e84c32e6bfcc8c",
-      measurementId: process.env.FIREBASE_DEV_MEASUREMENT_ID || "G-B6HMP9YK92"
+    // First try to get from app.config.js, otherwise use environment variables directly
+    return extra.firebaseDevConfig || {
+      apiKey: process.env.EXPO_PUBLIC_FIREBASE_DEV_API_KEY,
+      authDomain: process.env.EXPO_PUBLIC_FIREBASE_DEV_AUTH_DOMAIN,
+      projectId: process.env.EXPO_PUBLIC_FIREBASE_DEV_PROJECT_ID,
+      storageBucket: process.env.EXPO_PUBLIC_FIREBASE_DEV_STORAGE_BUCKET || undefined,
+      messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_DEV_MESSAGING_SENDER_ID || undefined,
+      appId: process.env.EXPO_PUBLIC_FIREBASE_DEV_APP_ID || undefined
     };
-    
-    console.log('🆘 Using EMERGENCY FALLBACK Firebase config');
-    return fallbackConfig;
-  }
-};
-
-// Log the current Firebase configuration details for debugging
-const logFirebaseEnvironment = () => {
-  const config = getFirebaseConfig();
-  
-  let environment = 'DEVELOPMENT BUILD';
-  if (!__DEV__) {
-    environment = isAppStoreRelease() ? 'APP STORE RELEASE' : 'TESTFLIGHT BUILD';
-  } else {
-    if (simulateAppStore) {
-      environment = 'APP STORE SIMULATION';
-    } else if (simulateTestFlight) {
-      environment = 'TESTFLIGHT SIMULATION';
-    }
-  }
-  
-  const database = config.projectId === 'barberapp-prod-2d197' ? 'PRODUCTION DATABASE' : 'TEST DATABASE';
-  
-  console.log(`🔥 Firebase Environment: ${environment}`);
-  console.log(`📊 Using Database: ${database} (${config.projectId})`);
-  console.log(`🔑 Using API Key: ${config.apiKey ? config.apiKey.substring(0, 8) + '...' : 'MISSING'}`);
-  console.log(`🌐 Auth Domain: ${config.authDomain}`);
-};
-
-// Try to load the saved preference when the module is imported
-(async () => {
-  try {
-    if (__DEV__) { // Only in development mode
-      // Load saved preferences
-      const savedProductionDb = await AsyncStorage.getItem('useProductionDatabase');
-      const savedTestFlightSim = await AsyncStorage.getItem('simulateTestFlight');
-      const savedAppStoreSim = await AsyncStorage.getItem('simulateAppStore');
-      
-      // Apply saved preferences
-      if (savedProductionDb === 'true') {
-        useProductionDb = true;
-        console.log('⚠️ Using PRODUCTION database in development environment (saved preference)');
-      }
-      
-      if (savedTestFlightSim === 'true') {
-        simulateTestFlight = true;
-        useProductionDb = false;
-        console.log('⚠️ Simulating TestFlight environment (saved preference)');
-      }
-      
-      if (savedAppStoreSim === 'true') {
-        simulateAppStore = true;
-        useProductionDb = false;
-        simulateTestFlight = false;
-        console.log('⚠️ Simulating App Store environment (saved preference)');
-      }
-    }
   } catch (error) {
-    console.warn('Could not load saved environment preferences:', error);
-  } finally {
-    // Run logging automatically when this module is imported
-    logFirebaseEnvironment();
-  }
-})();
-
-// Create a safeguard function to ensure we never return undefined config
-const getSafeFirebaseConfig = () => {
-  try {
-    const config = getFirebaseConfig();
-    
-    // Ensure we have a valid config object with required fields
-    if (!config || !config.apiKey || !config.projectId) {
-      console.error('❌ Invalid Firebase config detected. Missing required fields.');
-      
-      // If we don't have a valid config, fall back to the dev config which has hardcoded values
-      console.log('🛟 Using fallback configuration (dev)');
-      return devConfig;
-    }
-    
-    return config;
-  } catch (error) {
-    console.error('❌ Error getting Firebase config:', error);
-    console.log('🛟 Using fallback configuration (dev)');
-    return devConfig;
+    console.error('Error getting Firebase config:', error);
+    throw new Error('Failed to load Firebase configuration');
   }
 };
 
-// Export everything needed with a safety wrapper
-export default getSafeFirebaseConfig();
-export { useProductionDb, simulateTestFlight, simulateAppStore };
+export default getFirebaseConfig;

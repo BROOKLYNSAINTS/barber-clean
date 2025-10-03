@@ -62,8 +62,7 @@ function unwrapThreadId(value) {
 
       // Add to messages subcollection
       const messagesRef = collection(db, 'chatThreads', threadId, 'messages');
-      console.log("🧪 doc() call with threadId:", threadId, typeof threadId); // Should say "string"
-
+      
       await addDoc(messagesRef, {
         senderId: currentUser.uid,
         text: messageText,
@@ -72,24 +71,18 @@ function unwrapThreadId(value) {
 
       // Update chatThreads document
       const threadRef = doc(db, 'chatThreads', threadId);
-      console.log("🧪 doc() call with threadId:", threadId, typeof threadId); // Should say "string"
-      const threadDocRef = doc(db, 'chatThreads', threadId);
+      
+      // Get the thread first to check if it exists and to access participants
+      const threadSnap = await getDoc(threadRef);
 
-const threadSnap = await getDoc(threadDocRef);
-
-if (threadSnap.exists()) {
-  await updateDoc(threadDocRef, {
-    lastMessage: messageText,
-    updatedAt: serverTimestamp(),
-  });
-} else {
-  await setDoc(threadDocRef, {
-    participants: [currentUser.uid],
-    createdAt: serverTimestamp(),
-    lastMessage: messageText,
-    updatedAt: serverTimestamp(),
-  });
-}
+      if (threadSnap.exists()) {
+        await updateDoc(threadRef, {
+          lastMessage: messageText,
+          lastMessageTimestamp: serverTimestamp(),
+        });
+      } else {
+        console.error("Thread doesn't exist but should have been created already");
+      }
 
       setNewMessage('');
       console.log("✅ Message sent and thread updated");

@@ -7,98 +7,158 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { auth, getUserProfile, cancelAppointment } from '@/services/firebase';
-import { addAppointmentToCalendar, scheduleAppointmentReminder, cancelAppointmentNotifications, removeAppointmentFromCalendar } from '@/services/notifications';
+import { useRouter, useLocalSearchParams, Link } from 'expo-router';
+import { auth } from '@/services/firebase';
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  serverTimestamp 
+} from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { app } from '@/services/firebase';
+import { scheduleAppointmentReminder, cancelAppointmentNotifications, removeAppointmentFromCalendar } from '@/services/notifications';
 import { createAndPresentServicePaymentSheet, getAppointmentPaymentStatus } from '@/services/stripe';
 import { useStripe } from '@stripe/stripe-react-native';
+import { getUserProfile, cancelAppointment } from '@/services/firebase';
+
+// Initialize Firestore
+const db = getFirestore(app);
+
+// ✅ Safe JSON parsing utility
+const safeParse = (input) => {
+  if (!input) return null;
+  try {
+    return typeof input === 'string' ? JSON.parse(input) : input;
+  } catch (err) {
+    console.error('Error parsing JSON:', err, input);
+    return null;
+  }
+};
+
+const logAppointmentData = (app) => {
+  if (!app) {
+    console.error('❌ No appointment data to log');
+    return;
+  }
+  
+  console.log('====== APPOINTMENT DATA ======');
+  console.log('ID:', app.id);
+  console.log('Barber:', app.barberName);
+  console.log('Service:', app.serviceName);
+  console.log('Price:', app.servicePrice);
+  console.log('Date:', app.date);
+  console.log('Time:', app.time);
+  console.log('==============================');
+};
+
+// Add this function at the top level
+const fetchAppointmentById = async (appointmentId) => {
+  try {
+    const appointmentRef = doc(db, 'appointments', appointmentId);
+    const appointmentSnap = await getDoc(appointmentRef);
+    
+    if (appointmentSnap.exists()) {
+      return {
+        id: appointmentSnap.id,
+        ...appointmentSnap.data()
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching appointment:', error);
+    return null;
+  }
+};
 
 const AppointmentDetailsScreen = () => {
-  const router = useRouter();
-  const { presentPaymentSheet } = useStripe();
-  
-  // Safe JSON parsing utility
-  const safeParse = (input) => {
-    if (!input) return null;
-    try {
-      return typeof input === 'string' ? JSON.parse(input) : input;
-    } catch (err) {
-      return null;
-    }
-  };
-
-  // Use safeParse for params
   const params = useLocalSearchParams();
-  
-  // Add debugging to see what we're actually receiving
-  console.log('🔍 Raw params received:', params);
-  console.log('🔍 Appointment param:', params.appointment);
-  
-  const appointment = safeParse(params.appointment);
-
-  console.log('🔍 Parsed appointment:', appointment);
-
-  const [profile, setProfile] = useState(null);
+  const router = useRouter();
+  const [appointment, setAppointment] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-  const [calendarAdded, setCalendarAdded] = useState(false);
+  
+  // Rest of your state variables
+  const [profile, setProfile] = useState(null);
+  const [processing, setProcessing] = useState(false);
   const [reminderSet, setReminderSet] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState({ isPaid: false, amount: 0, paidAt: null });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
 
+  // Get the appointment ID from params
+  const appointmentId = params.id;
+  
+  // Load the appointment data from Firebase
   useEffect(() => {
-    try {
-      if (!appointment) {
-        setError('Appointment data not found.');
-        setLoading(false);
-        return;
-      }
-
-      // Check if appointment has required fields
-      if (!appointment.barberName || !appointment.serviceName || !appointment.servicePrice) {
-        setError('Appointment is missing required data.');
-        setLoading(false);
-        return;
-      }
-
-      // Check if appointment has an ID (needed for cancellation)
-      if (!appointment.id) {
-        console.warn('⚠️ Appointment missing ID field:', appointment);
-        // You can still view the appointment, but cancellation won't work
-      }
-
-      const fetchProfile = async () => {
-        try {
-          const user = auth.currentUser;
-          if (user) {
-            const userProfile = await getUserProfile(user.uid);
-            setProfile(userProfile);
-            
-            // Check payment status if appointment has an ID
-            if (appointment.id) {
-              const paymentInfo = await getAppointmentPaymentStatus(appointment.id);
-              setPaymentStatus(paymentInfo);
-              console.log('💳 Payment status for appointment:', paymentInfo);
-            }
-          }
-        } catch (err) {
-          console.error('Error loading profile:', err);
-        } finally {
+    const loadAppointment = async () => {
+      try {
+        if (!appointmentId) {
+          setError('No appointment ID provided.');
           setLoading(false);
+          return;
         }
-      };
-
-      fetchProfile();
-    } catch (err) {
-      console.error('Error:', err);
-      setError('Invalid data format.');
-      setLoading(false);
-    }
-    // ✅ Empty dependency array so this runs only once
-  }, []);
+        
+        console.log('Fetching appointment with ID:', appointmentId);
+        const appointmentData = await fetchAppointmentById(appointmentId);
+        
+        if (!appointmentData) {
+          setError('Appointment not found.');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('Successfully loaded appointment:', appointmentData);
+        setAppointment(appointmentData);
+        
+        // Log the essential appointment data
+        console.log('APPOINTMENT DATA:', {
+          id: appointmentData.id,
+          price: appointmentData.price,
+          servicePrice: appointmentData.servicePrice,
+          serviceName: appointmentData.serviceName
+        });
+        
+        // Load user profile
+        const user = auth.currentUser;
+        if (user) {
+          const userProfile = await getUserProfile(user.uid);
+          setProfile(userProfile);
+            
+          // Check payment status - handle the case where the function might be missing
+          try {
+            if (appointmentData.id && typeof getAppointmentPaymentStatus === 'function') {
+              const paymentInfo = await getAppointmentPaymentStatus(appointmentData.id);
+              setPaymentStatus(paymentInfo);
+              console.log('💳 status for appointment:', paymentInfo);
+            } else {
+              // If the function doesn't exist, use a default payment status
+              console.log('Payment status function not available, using default status');
+              setPaymentStatus({ 
+                isPaid: appointmentData.paymentStatus === 'paid',
+                amount: appointmentData.price || appointmentData.servicePrice || 0,
+                paidAt: appointmentData.paidAt || null
+              });
+            }
+          } catch (paymentError) {
+            console.error('Error getting payment status:', paymentError);
+            // Don't let payment status error prevent showing the appointment
+          }
+        }
+        
+        setLoading(false);
+      } catch (err) {
+        console.error('Error loading appointment:', err);
+        setError('Failed to load appointment details.');
+        setLoading(false);
+      }
+    };
+    
+    loadAppointment();
+  }, [appointmentId]);
 
   // Fix the date shift bug by parsing as local date
   const formatDate = (dateString) => {
@@ -110,90 +170,148 @@ const AppointmentDetailsScreen = () => {
     return dateObj.toLocaleDateString(undefined, options);
   };
 
-  const handleAddToCalendar = async () => {
-    if (!appointment) return;
-    try {
-      setProcessing(true);
-      await addAppointmentToCalendar(appointment);
-      setCalendarAdded(true);
-      Alert.alert('Success', 'Appointment added to calendar.');
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Could not add to calendar.');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   const handleSetReminder = async () => {
     if (!appointment) return;
     try {
+      // Debug logs for date/time conversion
+      console.log('DEBUG appointment.date:', appointment.date);
+      console.log('DEBUG appointment.time:', appointment.time);
+      
       setProcessing(true);
-      await scheduleAppointmentReminder(appointment);
+      
+      // Prepare appointment data for reminder
+      const reminderData = {
+        id: appointment.id,
+        date: appointment.date,
+        time: appointment.time,
+        serviceName: appointment.serviceName || 'Haircut',
+        barberName: appointment.barberName || 'Barber'
+      };
+      
+      await scheduleAppointmentReminder(reminderData);
       setReminderSet(true);
       Alert.alert('Success', 'Reminder set.');
     } catch (err) {
-      console.error(err);
+      console.error('Error setting reminder:', err);
       Alert.alert('Error', 'Could not set reminder.');
     } finally {
       setProcessing(false);
     }
   };
 
-  const handleCancelAppointment = async () => {
-    // Check if appointment has ID
-    if (!appointment?.id) {
-      Alert.alert(
-        'Error',
-        'Cannot cancel appointment: missing appointment ID. Please contact support.'
-      );
-      return;
-    }
+  const functions = getFunctions();
+  const cancelAppointmentFunction = httpsCallable(functions, 'cancelAppointment');
 
-    Alert.alert(
-      'Cancel Appointment',
-      'Are you sure you want to cancel this appointment? This action cannot be undone.',
-      [
-        { text: 'No', style: 'cancel' },
-        {
-          text: 'Yes, Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setProcessing(true);
-              
-              // Cancel the appointment in Firestore
-              await cancelAppointment(appointment.id, auth.currentUser?.uid);
-              
-              // Cancel related notifications
-              await cancelAppointmentNotifications(appointment.id, auth.currentUser?.uid);
-              
-              // Remove from iOS calendar
-              await removeAppointmentFromCalendar(appointment);
-              
-              Alert.alert(
-                'Cancelled', 
-                'Your appointment has been cancelled successfully. Any scheduled reminders and calendar events have also been removed.',
-                [
-                  {
-                    text: 'OK',
-                    onPress: () => router.back()
+  const handleCancelAppointment = async () => {
+    try {
+      // Show confirmation dialog
+      Alert.alert(
+        'Cancel Appointment',
+        'Are you sure you want to cancel this appointment?',
+        [
+          { text: 'No', style: 'cancel' },
+          { 
+            text: 'Yes, Cancel', 
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setProcessing(true);
+                
+                // Try both methods - Cloud Function first, then local fallback if needed
+                let cancelled = false;
+                let errorMessage = '';
+                
+                // First try: Cloud Function approach
+                if (auth.currentUser) {
+                  try {
+                    console.log('Attempting cancellation via Cloud Function...');
+                    const functions = getFunctions();
+                    const cancelAppointmentFunction = httpsCallable(functions, 'cancelAppointment');
+                    await cancelAppointmentFunction({ 
+                      appointmentId: appointment.id,
+                      userId: auth.currentUser.uid
+                    });
+                    cancelled = true;
+                  } catch (cloudError) {
+                    console.log('Cloud Function approach failed:', cloudError);
+                    errorMessage = 'Server-side cancellation failed';
+                    // We'll try the local approach next, don't show error yet
                   }
-                ]
-              );
-            } catch (error) {
-              console.error('Error cancelling appointment:', error);
-              Alert.alert(
-                'Error', 
-                'Could not cancel appointment. Please try again or contact support.'
-              );
-            } finally {
-              setProcessing(false);
+                }
+                
+                // Second try: Local approach if cloud function failed
+                if (!cancelled) {
+                  try {
+                    console.log('Attempting local cancellation approach...');
+                    
+                    // Update appointment status
+                    const appointmentRef = doc(db, 'appointments', appointment.id);
+                    await updateDoc(appointmentRef, {
+                      status: 'cancelled',
+                      cancelledAt: serverTimestamp(),
+                      updatedAt: serverTimestamp()
+                    });
+                    
+                    // Restore availability slots
+                    await restoreCancelledTimeSlots(appointment);
+                    
+                    cancelled = true;
+                  } catch (localError) {
+                    console.error('Local approach failed too:', localError);
+                    errorMessage = 'Failed to update appointment status';
+                  }
+                }
+                
+                // Third step: Always try to clean up notifications regardless of cancellation
+                try {
+                  if (auth.currentUser && appointment?.id) {
+                    await cancelAppointmentNotifications(appointment.id, auth.currentUser.uid);
+                  }
+                } catch (notifError) {
+                  console.log('Non-critical: Failed to cancel notifications:', notifError);
+                  // Don't affect the main cancellation status
+                }
+                
+                // Final result: Either success or show error
+                if (cancelled) {
+                  // Success! Show message and navigate back
+                  Alert.alert(
+                    'Appointment Cancelled',
+                    'Your appointment has been successfully cancelled.',
+                    [
+                      { 
+                        text: 'OK', 
+                        onPress: () => {
+                          router.replace('/(app)/(customer)/appointments');
+                        }
+                      }
+                    ]
+                  );
+                } else {
+                  // Both approaches failed, show error
+                  Alert.alert(
+                    'Cancellation Failed', 
+                    'We were unable to cancel your appointment. Please try again or contact support.'
+                  );
+                }
+              } catch (finalError) {
+                // Something unexpected happened
+                console.error('Unexpected error during cancellation:', finalError);
+                Alert.alert(
+                  'Unexpected Error',
+                  'Something went wrong. Please try again later.'
+                );
+              } finally {
+                setProcessing(false);
+              }
             }
-          },
-        },
-      ]
-    );
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error initiating appointment cancellation:', error);
+      Alert.alert('Error', 'Could not start cancellation process.');
+    }
   };
 
   const handlePayForService = async () => {
@@ -215,7 +333,7 @@ const AppointmentDetailsScreen = () => {
         auth.currentUser?.uid,
         appointment.barberId,
         appointment.id,
-        appointment.servicePrice,
+        appointment.price,
         `${appointment.serviceName} - ${appointment.barberName}`
       );
 
@@ -223,13 +341,13 @@ const AppointmentDetailsScreen = () => {
         // Update local payment status
         setPaymentStatus({
           isPaid: true,
-          amount: appointment.servicePrice,
+          amount: appointment.price,
           paidAt: new Date()
         });
 
         const paymentMessage = result.demo 
-          ? `Demo payment of $${appointment.servicePrice?.toFixed(2)} has been processed successfully. (Backend not configured - this is simulation mode)`
-          : `Payment of $${appointment.servicePrice?.toFixed(2)} has been processed successfully.`;
+          ? `Demo payment of $${appointment.price?.toFixed(2)} has been processed successfully. (Backend not configured - this is simulation mode)`
+          : `Payment of $${appointment.price?.toFixed(2)} has been processed successfully.`;
 
         Alert.alert(
           'Payment Successful',
@@ -260,35 +378,6 @@ const AppointmentDetailsScreen = () => {
     }
   };
 
-  const scheduleReminder = async () => {
-    if (!appointment) return;
-    try {
-      // Debug logs for date/time conversion
-      console.log('DEBUG appointment.date:', appointment.date);
-      console.log('DEBUG appointment.time:', appointment.time);
-      console.log('DEBUG to24Hour(appointment.time):', to24Hour(appointment.time));
-
-      let appointmentDate;
-      try {
-        appointmentDate = getAppointmentDate(appointment.date, appointment.time);
-        console.log('DEBUG getAppointmentDate result:', appointmentDate);
-      } catch (err) {
-        console.error('DEBUG getAppointmentDate error:', err);
-        Alert.alert('Error', 'Invalid date or time format.');
-        return;
-      }
-      setProcessing(true);
-      await scheduleAppointmentReminder(appointment);
-      setReminderSet(true);
-      Alert.alert('Success', 'Reminder set.');
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Could not set reminder.');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -316,6 +405,7 @@ const AppointmentDetailsScreen = () => {
         <Text style={styles.title}>Appointment Details</Text>
       </View>
 
+      {/* Appointment details card */}
       <View style={styles.card}>
         <View style={styles.row}>
           <Ionicons name="person" size={20} color="#555" />
@@ -340,7 +430,7 @@ const AppointmentDetailsScreen = () => {
         <View style={styles.row}>
           <Ionicons name="pricetag" size={20} color="#555" />
           <Text style={styles.label}>Price:</Text>
-          <Text style={styles.value}>${appointment.servicePrice?.toFixed(2) || 'N/A'}</Text>
+          <Text style={styles.value}>${(appointment.price).toFixed(2) }</Text>
         </View>
         
         {/* Payment Status Row */}
@@ -357,45 +447,24 @@ const AppointmentDetailsScreen = () => {
         </View>
       </View>
 
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[styles.button, calendarAdded && styles.disabled]}
-          onPress={handleAddToCalendar}
-          disabled={processing || calendarAdded}
-        >
-          <Text style={styles.buttonText}>
-            {calendarAdded ? 'Added to Calendar' : 'Add to Calendar'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.button, reminderSet && styles.disabled]}
-          onPress={handleSetReminder}
-          disabled={processing || reminderSet}
-        >
-          <Text style={styles.buttonText}>
-            {reminderSet ? 'Reminder Set' : 'Set Reminder'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Payment Section */}
-      {!paymentStatus.isPaid && appointment.servicePrice > 0 && (
-        <View style={styles.paymentSection}>
+      {/* 1. Payment Button */}
+      {!paymentStatus.isPaid && appointment.price > 0 && (
+        <View style={styles.buttonSection}>
           <TouchableOpacity 
-            style={[styles.payButton, paymentProcessing && styles.disabledPayment]} 
+            style={[styles.fullButton, paymentProcessing && styles.disabledButton]} 
             onPress={handlePayForService}
             disabled={paymentProcessing}
           >
-            <Ionicons name="card" size={20} color="#fff" style={styles.buttonIcon} />
-            <Text style={styles.payButtonText}>
-              {paymentProcessing ? 'Processing...' : `Pay $${appointment.servicePrice?.toFixed(2)}`}
+            <Ionicons name="card-outline" size={24} color="#fff" style={styles.buttonIcon} />
+            <Text style={styles.fullButtonText}>
+              {paymentProcessing ? 'Processing...' : `Pay $${(appointment.price)?.toFixed(2)}`}
             </Text>
           </TouchableOpacity>
-          <Text style={styles.paymentHint}>Pay after service is completed</Text>
+          <Text style={styles.buttonHint}>Pay after service is completed</Text>
         </View>
       )}
 
+      {/* If already paid, show payment completed */}
       {paymentStatus.isPaid && (
         <View style={styles.paidSection}>
           <View style={styles.paidIndicator}>
@@ -408,16 +477,56 @@ const AppointmentDetailsScreen = () => {
         </View>
       )}
 
-      <TouchableOpacity 
-        style={[styles.cancelButton, processing && styles.disabledCancel]} 
-        onPress={handleCancelAppointment}
-        disabled={processing}
-      >
-        <Text style={styles.cancelText}>
-          {processing ? 'Cancelling...' : 'Cancel Appointment'}
-        </Text>
-      </TouchableOpacity>
+      {/* 2. Tip Button */}
+      <View style={styles.buttonSection}>
+        <TouchableOpacity
+          style={styles.fullButton}
+          onPress={() => router.push({
+            pathname: '/(app)/(customer)/tip',
+            params: {
+              appointmentId: appointment.id,
+              barberId: appointment.barberId,
+              barberName: appointment.barberName,
+              serviceName: appointment.serviceName,
+              servicePrice: appointment.price || appointment.servicePrice || 0
+            }
+          })}
+        >
+          <Ionicons name="cash-outline" size={24} color="#fff" style={styles.buttonIcon} />
+          <Text style={styles.fullButtonText}>Add Tip</Text>
+        </TouchableOpacity>
+      </View>
+      
+      {/* 3. Write Review Button */}
+      <View style={styles.buttonSection}>
+        <TouchableOpacity
+          style={styles.fullButton}
+          onPress={() => router.push({
+            pathname: '/(app)/(customer)/write-review',
+            params: {
+              barberId: appointment.barberId,
+              barberName: appointment.barberName
+            }
+          })}
+        >
+          <Ionicons name="star-outline" size={24} color="#fff" style={styles.buttonIcon} />
+          <Text style={styles.fullButtonText}>Write Review</Text>
+        </TouchableOpacity>
+      </View>
 
+      {/* 4. Cancel Button */}
+      <View style={styles.buttonSection}>
+        <TouchableOpacity 
+          style={[styles.cancelButton, processing && styles.disabledButton]} 
+          onPress={handleCancelAppointment}
+          disabled={processing}
+        >
+          <Ionicons name="close-circle-outline" size={24} color="#F44336" style={styles.buttonIcon} />
+          <Text style={styles.cancelText}>
+            {processing ? 'Cancelling...' : 'Cancel Appointment'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 };
@@ -549,14 +658,178 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   cancelButton: {
-    backgroundColor: '#f44336',
-    padding: 14,
-    margin: 20,
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    borderWidth: 2,
+    borderColor: '#F44336',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 10,
+    width: '90%',
+  },
+  cancelText: { 
+    color: '#F44336', 
+    fontWeight: 'bold',
+    fontSize: 18,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  backButton: {
+    marginTop: 12,
+    backgroundColor: '#2196F3',
+    padding: 10,
+    borderRadius: 6,
+  },
+  backButtonText: { color: '#fff', fontWeight: 'bold' },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  actionButton: {
+    backgroundColor: '#2196F3',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
     borderRadius: 8,
+    width: '48%',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
+  },
+  buttonSection: {
+    margin: 12,
     alignItems: 'center',
   },
-  disabledCancel: { backgroundColor: '#999' },
-  cancelText: { color: '#fff', fontWeight: 'bold' },
+  fullButton: {
+    backgroundColor: '#2196F3',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 10,
+    width: '90%', 
+    marginHorizontal: 20,
+  },
+  fullButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 18,
+    marginLeft: 10,
+  },
+  buttonIcon: {
+    marginRight: 6,
+  },
+  buttonHint: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  disabledButton: { 
+    backgroundColor: '#999',
+    opacity: 0.7,
+  },
 });
+
+// Add this function to restore availability
+const restoreCancelledTimeSlots = async (appointment) => {
+  try {
+    // Skip if no barber ID
+    if (!appointment.barberId) {
+      console.error('Cannot restore availability: missing barber ID');
+      return;
+    }
+    
+    const { barberId, date } = appointment;
+    
+    // Get time slots that need to be restored
+    let slotsToRestore = [];
+    
+    // If the appointment has slotsBooked array, use that
+    if (Array.isArray(appointment.slotsBooked) && appointment.slotsBooked.length > 0) {
+      slotsToRestore = appointment.slotsBooked;
+      console.log('Restoring slots from slotsBooked:', slotsToRestore);
+    }
+    // Otherwise, calculate slots based on time24 and duration
+    else {
+      const time24 = appointment.time24 || to24Hour(appointment.time);
+      
+      if (!time24) {
+        console.error('Cannot restore availability: invalid time format');
+        return;
+      }
+      
+      const duration = Number(appointment.duration) || 30;
+      const intervalMinutes = 30; // Standard interval
+      const slotsNeeded = Math.ceil(duration / intervalMinutes);
+      
+      // Calculate all slots that were used
+      const startTimeMinutes = timeToMinutes(time24);
+      for (let i = 0; i < slotsNeeded; i++) {
+        const slotTime = minutesToTime(startTimeMinutes + (i * intervalMinutes));
+        slotsToRestore.push(slotTime);
+      }
+      
+      console.log('Restoring calculated slots:', slotsToRestore);
+    }
+    
+    // Update barber's availability to add back these slots
+    if (slotsToRestore.length > 0) {
+      const barberRef = doc(db, 'users', barberId);
+      
+      // Get current availability
+      const barberSnap = await getDoc(barberRef);
+      if (!barberSnap.exists()) {
+        console.error('Cannot restore availability: barber not found');
+        return;
+      }
+      
+      const barberData = barberSnap.data();
+      const availability = barberData.availability || {};
+      const existingSlots = availability[date] || [];
+      
+      // Add the slots back, keeping them sorted
+      const updatedSlots = [...existingSlots, ...slotsToRestore]
+        .filter((slot, i, arr) => arr.indexOf(slot) === i) // Deduplicate
+        .sort(); // Sort chronologically
+      
+      // Update the barber's availability
+      await updateDoc(barberRef, {
+        [`availability.${date}`]: updatedSlots
+      });
+      
+      console.log('✅ Restored availability slots:', updatedSlots);
+    }
+  } catch (error) {
+    console.error('Error restoring availability:', error);
+    // Don't throw so this doesn't prevent the cancellation from completing
+  }
+};
+
+// Helper function: Convert time (HH:MM) to minutes since midnight
+function timeToMinutes(time) {
+  if (!time) return 0;
+  const [hours, minutes] = time.split(':').map(Number);
+  return (hours * 60) + minutes;
+}
+
+// Helper function: Convert minutes since midnight to time (HH:MM)
+function minutesToTime(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
 
 export default AppointmentDetailsScreen;

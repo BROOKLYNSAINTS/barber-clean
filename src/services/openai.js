@@ -2,205 +2,52 @@
 
 import Constants from 'expo-constants';
 
-const API_KEY = Constants.expoConfig?.extra?.OPENAI_API_KEY;
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+const API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+console.log('API KEY available:', !!API_KEY);
 
-export const generateChatResponse = async (text = '', context = []) => {
-  if (!API_KEY) {
-    console.error("❌ Missing OpenAI API Key");
-    return { success: false, error: "Missing API key" };
-  }
+// System message for the barber assistant
+const SYSTEM_MESSAGE = `You are a barber business management assistant. Help barbers with scheduling, customer management, marketing, and business advice. Your responses should be professional, concise, and helpful for barber shop owners and individual barbers.`;
 
-  const systemMessage = {
-    role: 'system',
-    content: `You are a helpful assistant for a barbershop app. 
-    Do not say "appointment is booked" unless you are explicitly told it was booked. 
-    Instead, ask the user to confirm the time, and wait for the app to process the appointment.`
-  };
-
-  // ✅ Safely format context into valid message objects
-  const formattedContext = Array.isArray(context)
-    ? context.map(item =>
-        typeof item === 'string'
-          ? { role: 'user', content: item }
-          : item
-      )
-    : [];
-
-  const messages = [
-    systemMessage,
-    ...formattedContext,
-    { role: 'user', content: text },
-  ];
-
+export const generateChatResponse = async (message) => {
   try {
-    const response = await fetch(OPENAI_URL, {
+    if (!API_KEY) {
+      console.error('❌ Missing OpenAI API Key');
+      return { text: "Error: OpenAI API key not configured", success: false };
+    }
+
+    console.log('Generating response for message:', message);
+    
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`
       },
       body: JSON.stringify({
         model: 'gpt-3.5-turbo',
-        messages,
+        messages: [
+          { role: 'system', content: SYSTEM_MESSAGE },
+          { role: 'user', content: message }
+        ],
         temperature: 0.7,
-        max_tokens: 300,
-      }),
+        max_tokens: 300
+      })
     });
 
-    const data = await response.json();
-
-    if (data.choices && data.choices.length > 0) {
-      const content = data.choices[0].message.content.trim();
-      console.log("🧪 Full OpenAI response:", JSON.stringify(data, null, 2));
-      return { success: true, text: content };
-    } else {
-      console.error("❌ No choices returned:", data);
-      return { success: false, error: 'No choices returned' };
+    if (!response.ok) {
+      const errorData = await response.text();
+      console.error('OpenAI API error:', errorData);
+      return { text: "Sorry, there was an error processing your request.", success: false };
     }
-  } catch (err) {
-    console.error("❌ Fetch error:", err);
-    return { success: false, error: err.message || 'Unknown error' };
-  }
-};
-
-export const assistWithAppointmentBooking = async (userPrompt, availableSlots) => {
-  const prompt = `
-You are an AI assistant helping schedule barber appointments.
-The customer said: "${userPrompt}".
-The available time slots are: ${availableSlots.join(', ')}.
-Based on the input, suggest the best time slot.
-`;
-
-  try {
-    const response = await fetch(OPENAI_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.5,
-        max_tokens: 100,
-      }),
-    });
 
     const data = await response.json();
+    console.log('🧪 Full OpenAI response:', data);
 
-    if (data?.choices?.length > 0) {
-      const text = data.choices[0].message.content;
-      const match = text.match(/\b\d{1,2}:\d{2}\b\s?(AM|PM)?/i);
-      const suggestedTime = match ? match[0] : null;
-
-      return {
-        success: true,
-        suggestedTime,
-        explanation: text,
-      };
-    } else {
-      return { success: false, error: 'No response from OpenAI.' };
-    }
-  } catch (err) {
-    console.error('❌ AI request failed:', err);
-    return { success: false, error: 'AI request failed.' };
-  }
-};
-
-export const generateHairStyleRecommendation = async (userPreferences) => {
-  const { faceShape, hairType, currentLength, stylePreference, occasion } = userPreferences;
-  const prompt = `As a professional barber, recommend a hairstyle for a client with:\n- Face shape: ${faceShape}\n- Hair type: ${hairType}\n- Current hair length: ${currentLength}\n- Style preference: ${stylePreference}\n- Occasion: ${occasion}`;
-
-  try {
-    const response = await fetch(TEXT_DAVINCI_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-davinci-003',
-        prompt,
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
-    });
-
-    const data = await response.json();
-    return data?.choices?.[0]?.text?.trim() || 'No recommendation returned.';
+    const responseText = data?.choices?.[0]?.message?.content || "Sorry, I couldn't generate a response";
+    return { text: responseText, success: true };
+    
   } catch (error) {
-    console.error('❌ Error generating hairstyle recommendation:', error);
-    throw error;
-  }
-};
-
-export const generateMessageTemplate = async (messageType, customerDetails) => {
-  const { name, appointmentType, appointmentTime, lastVisit } = customerDetails;
-  let prompt = '';
-
-  switch (messageType) {
-    case 'appointment_confirmation':
-      prompt = `Generate an appointment confirmation for ${name} on ${appointmentTime} for ${appointmentType}.`;
-      break;
-    case 'appointment_reminder':
-      prompt = `Generate an appointment reminder for ${name} on ${appointmentTime} for ${appointmentType}.`;
-      break;
-    case 'follow_up':
-      prompt = `Generate a follow-up message for ${name} who last visited for ${appointmentType} on ${lastVisit}.`;
-      break;
-    case 'special_offer':
-      prompt = `Generate a special offer message for ${name} who last visited for ${appointmentType} on ${lastVisit}.`;
-      break;
-    default:
-      prompt = `Generate a general message for ${name}.`;
-  }
-
-  try {
-    const response = await fetch(TEXT_DAVINCI_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-davinci-003',
-        prompt,
-        temperature: 0.7,
-        max_tokens: 200,
-      }),
-    });
-
-    const data = await response.json();
-    return data?.choices?.[0]?.text?.trim() || 'No message returned.';
-  } catch (error) {
-    console.error('❌ Error generating message template:', error);
-    throw error;
-  }
-};
-
-export const generateBarberAdminHelp = async (query) => {
-  const prompt = `As a barber shop AI assistant, help with the following query: \"${query}\".`;
-
-  try {
-    const response = await fetch(TEXT_DAVINCI_URL, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'text-davinci-003',
-        prompt,
-        temperature: 0.7,
-        max_tokens: 500,
-      }),
-    });
-
-    const data = await response.json();
-    return data?.choices?.[0]?.text?.trim() || 'No help text returned.';
-  } catch (error) {
-    console.error('❌ Error generating barber admin help:', error);
-    throw error;
+    console.error("Error generating response:", error);
+    return { text: "Sorry, there was an error processing your request.", success: false };
   }
 };

@@ -10,15 +10,17 @@ import {
   Alert,
   StyleSheet,
   Image,
-  ScrollView, // Add this import
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getBarberServices, addBarberService, auth } from '@/services/firebase';
+import { getBarberServices, addBarberService, updateBarberService, auth } from '@/services/firebase';
 import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 
 function Screen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -27,9 +29,13 @@ function Screen() {
   const [serviceName, setServiceName] = useState('');
   const [duration, setDuration] = useState('');
   const [price, setPrice] = useState('');
-  const [serviceImage, setServiceImage] = useState(null); // Add image state
+  const [serviceImage, setServiceImage] = useState(null);
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const viewCustomerReviews = () => {
+    router.push('/(app)/(barber)/barber-reviews');
+  };
 
   useEffect(() => {
     fetchServices();
@@ -40,127 +46,137 @@ function Screen() {
       setLoading(true);
       const user = auth.currentUser;
       
-      console.log('🔍 Current user:', user?.uid);
-      console.log('🔍 Fetching services for barber...');
+      if (!user) {
+        console.log('No user logged in');
+        setLoading(false);
+        return;
+      }
       
-      const data = await getBarberServices(user.uid);
-      
-      console.log('🔍 Services data received:', data);
-      console.log('🔍 Number of services:', data?.length);
-      
-      setServices(data);
-    } catch (err) {
-      console.error('❌ Failed to fetch services:', err);
-      console.error('❌ Error details:', err.message);
-      Alert.alert('Error', 'Could not load services.');
+      const barberServices = await getBarberServices(user.uid);
+      setServices(barberServices || []);
+    } catch (error) {
+      console.log('Error fetching services:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const openModal = (service = null) => {
-    setEditingService(service);
-    setServiceName(service?.name || '');
-    setDuration(service?.duration?.toString() || '');
-    setPrice(service?.price?.toString() || '');
-    setServiceImage(service?.image || null); // Set existing image if editing
+    if (service) {
+      // Editing existing service
+      setEditingService(service);
+      setServiceName(service.name || '');
+      setDuration(service.duration?.toString() || '');
+      setPrice(service.price?.toString() || '');
+      setServiceImage(service.image || null);
+    } else {
+      // Adding new service
+      setEditingService(null);
+      setServiceName('');
+      setDuration('');
+      setPrice('');
+      setServiceImage(null);
+    }
     setFormError('');
     setModalVisible(true);
   };
 
-  // Image picker function
-  const pickImage = async () => {
-    try {
-      // Check current permission status
-      let permission = await ImagePicker.getMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      }
-      if (!permission.granted) {
-        Alert.alert('Permission Required', 'Sorry, we need camera roll permissions to upload images.');
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets[0]) {
-        setServiceImage(result.assets[0].uri);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
-    }
+  const closeModal = () => {
+    setModalVisible(false);
+    setFormError('');
   };
 
-  // Remove image function
-  const removeImage = () => {
-    setServiceImage(null);
+  const validateForm = () => {
+    if (!serviceName.trim()) {
+      setFormError('Please enter a service name');
+      return false;
+    }
+    if (!duration.trim() || isNaN(Number(duration)) || Number(duration) <= 0) {
+      setFormError('Please enter a valid duration in minutes');
+      return false;
+    }
+    if (!price.trim() || isNaN(Number(price)) || Number(price) <= 0) {
+      setFormError('Please enter a valid price');
+      return false;
+    }
+    return true;
   };
 
   const handleSave = async () => {
-    if (!serviceName || !duration || !price) {
-      setFormError('Please fill all required fields');
-      return;
-    }
-
-    const parsedDuration = parseInt(duration);
-    const parsedPrice = parseFloat(price);
-
-    if (isNaN(parsedDuration) || parsedDuration <= 0) {
-      setFormError('Duration must be a valid number');
-      return;
-    }
-
-    if (isNaN(parsedPrice) || parsedPrice <= 0) {
-      setFormError('Price must be a valid number');
-      return;
-    }
-
+    if (!validateForm()) return;
+    
     try {
       setSaving(true);
       const user = auth.currentUser;
+      
+      if (!user) {
+        console.log('No user logged in');
+        setSaving(false);
+        return;
+      }
+      
       const serviceData = {
-        name: serviceName,
-        duration: parsedDuration,
-        price: parsedPrice,
-        image: serviceImage, // Include image in service data
+        name: serviceName.trim(),
+        duration: Number(duration),
+        price: Number(price),
+        image: serviceImage,
+        barberId: user.uid,
       };
-      await addBarberService(user.uid, serviceData);
-      setModalVisible(false);
+      
+      if (editingService) {
+        // Update existing service
+        await updateBarberService(editingService.id, serviceData);
+      } else {
+        // Add new service
+        await addBarberService(serviceData);
+      }
+      
+      // Refresh services list
       fetchServices();
-    } catch (err) {
-      console.error('Failed to save service', err);
-      Alert.alert('Error', 'Could not save service.');
+      closeModal();
+      
+    } catch (error) {
+      console.log('Error saving service:', error);
+      setFormError('Failed to save service. Please try again.');
     } finally {
       setSaving(false);
     }
   };
 
-  const renderService = ({ item }) => (
-    <View style={styles.card}>
-      {item.image && (
-        <Image source={{ uri: item.image }} style={styles.serviceImage} />
-      )}
-      <View style={styles.serviceContent}>
-        <Text style={styles.title}>{item.name}</Text>
-        <Text style={styles.serviceDetails}>{item.duration} min — ${item.price.toFixed(2)}</Text>
-      </View>
-      <TouchableOpacity onPress={() => openModal(item)} style={styles.editButton}>
-        <Ionicons name="create-outline" size={18} color="#007BFF" />
-      </TouchableOpacity>
-    </View>
-  );
+  const pickImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.5,
+      });
+      
+      if (!result.canceled && result.assets && result.assets[0]) {
+        setServiceImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.log('Error picking image:', error);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header with Reviews button */}
       <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
-        <Text style={styles.headerTitle}>✂️ Manage Services</Text>
-        <Text style={styles.headerSubtitle}>Add and edit your services</Text>
+        <View style={styles.headerContent}>
+          <Text style={styles.headerTitle}>✂️ Manage Services</Text>
+          <Text style={styles.headerSubtitle}>Add and edit your services</Text>
+        </View>
+        
+        {/* Keep only this reviews button */}
+        <TouchableOpacity 
+          style={styles.reviewsButton}
+          onPress={viewCustomerReviews}
+        >
+          <Ionicons name="star" size={22} color="#000" />
+          <Text style={styles.reviewsButtonText}>VIEW REVIEWS</Text>
+        </TouchableOpacity>
       </View>
 
       {loading ? (
@@ -180,186 +196,185 @@ function Screen() {
             <Ionicons name="add" size={20} color="#fff" />
             <Text style={styles.addFirstButtonText}>Add Your First Service</Text>
           </TouchableOpacity>
+          
+          {/* Remove this button - it's redundant with the header button */}
+          {/* <TouchableOpacity 
+            style={styles.checkReviewsButton} 
+            onPress={viewCustomerReviews}
+          >
+            <Ionicons name="star" size={20} color="#fff" />
+            <Text style={styles.checkReviewsText}>Check Your Reviews</Text>
+          </TouchableOpacity> */}
         </View>
       ) : (
         <>
           <FlatList
             data={services}
-            keyExtractor={(item) => item.id}
-            renderItem={renderService}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                style={styles.serviceRow}
+                onPress={() => openModal(item)}
+              >
+                {/* Column 1: Image */}
+                <View style={styles.imageColumn}>
+                  {item.image ? (
+                    <Image source={{ uri: item.image }} style={styles.serviceImage} />
+                  ) : (
+                    <View style={styles.imagePlaceholder}>
+                      <Ionicons name="cut" size={20} color="#aaa" />
+                    </View>
+                  )}
+                </View>
+                
+                {/* Column 2: Service Name */}
+                <View style={styles.nameColumn}>
+                  <Text style={styles.serviceName}>{item.name}</Text>
+                </View>
+                
+                {/* Column 3: Duration */}
+                <View style={styles.durationColumn}>
+                  <Text style={styles.serviceDuration}>{item.duration} min</Text>
+                </View>
+                
+                {/* Column 4: Price */}
+                <View style={styles.priceColumn}>
+                  <Text style={styles.servicePrice}>${parseFloat(item.price).toFixed(2)}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
             contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
           />
+          
           <TouchableOpacity style={styles.fab} onPress={() => openModal()}>
-            <Ionicons name="add" size={24} color="#fff" />
+            <Ionicons name="add" size={32} color="#fff" />
           </TouchableOpacity>
         </>
       )}
 
+      {/* Service Modal */}
       <Modal visible={modalVisible} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modal}>
-            <Text style={styles.modalTitle}>
-              {editingService ? 'Edit Service' : 'Add New Service'}
-            </Text>
-
-            {formError ? <Text style={styles.error}>{formError}</Text> : null}
-
-            <ScrollView 
-              showsVerticalScrollIndicator={true} 
-              style={styles.modalContent}
-              contentContainerStyle={styles.scrollContent}
-            >
-              <TextInput
-                placeholder="Service Name *"
-                value={serviceName}
-                onChangeText={setServiceName}
-                style={styles.input}
-              />
-              
-              <TextInput
-                placeholder="Duration (min) *"
-                value={duration}
-                onChangeText={setDuration}
-                keyboardType="numeric"
-                style={styles.input}
-              />
-              
-              <TextInput
-                placeholder="Price ($) *"
-                value={price}
-                onChangeText={setPrice}
-                keyboardType="decimal-pad"
-                style={styles.input}
-              />
-
-              {/* DEBUG: Add this text to see if section is rendering */}
-              <Text style={{ color: 'red', fontSize: 12, marginBottom: 10 }}>
-                DEBUG: Image section should appear below
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingService ? 'Edit Service' : 'Add New Service'}
               </Text>
-
-              {/* Image Section */}
-              <View style={styles.imageSection}>
-                <Text style={styles.imageLabel}>📸 Service Image (Optional)</Text>
-                
-                {serviceImage ? (
-                  <View style={styles.imageContainer}>
-                    <Image source={{ uri: serviceImage }} style={styles.previewImage} />
-                    <TouchableOpacity style={styles.removeImageButton} onPress={removeImage}>
-                      <Ionicons name="close-circle" size={24} color="#f44336" />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.imagePickerButton} onPress={pickImage}>
-                    <Ionicons name="camera-outline" size={24} color="#666" />
-                    <Text style={styles.imagePickerText}>Add Photo</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* DEBUG: Add this text at the end */}
-              <Text style={{ color: 'red', fontSize: 12, marginTop: 20, marginBottom: 40 }}>
-                DEBUG: End of scroll content
-              </Text>
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancel}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave} style={[styles.save, saving && styles.saveDisabled]}>
-                <Text style={styles.saveText}>
-                  {saving ? 'Saving...' : 'Save Service'}
-                </Text>
+              <TouchableOpacity onPress={closeModal} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color="#000" />
               </TouchableOpacity>
             </View>
+            
+            <ScrollView style={styles.modalScroll}>
+              {/* Image Picker */}
+              <TouchableOpacity style={styles.imagePicker} onPress={pickImage}>
+                {serviceImage ? (
+                  <Image source={{ uri: serviceImage }} style={styles.pickedImage} />
+                ) : (
+                  <View style={styles.imagePickerPlaceholder}>
+                    <Ionicons name="camera" size={40} color="#aaa" />
+                    <Text style={styles.imagePickerText}>Add Photo</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              
+              {/* Form Fields */}
+              <Text style={styles.label}>Service Name</Text>
+              <TextInput
+                style={styles.input}
+                value={serviceName}
+                onChangeText={setServiceName}
+                placeholder="e.g., Haircut, Beard Trim, etc."
+                placeholderTextColor="#aaa"
+              />
+              
+              <Text style={styles.label}>Duration (minutes)</Text>
+              <TextInput
+                style={styles.input}
+                value={duration}
+                onChangeText={setDuration}
+                placeholder="e.g., 30, 45, 60"
+                placeholderTextColor="#aaa"
+                keyboardType="number-pad"
+              />
+              
+              <Text style={styles.label}>Price ($)</Text>
+              <TextInput
+                style={styles.input}
+                value={price}
+                onChangeText={setPrice}
+                placeholder="e.g., 25, 30.50"
+                placeholderTextColor="#aaa"
+                keyboardType="decimal-pad"
+              />
+              
+              {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+              
+              <TouchableOpacity 
+                style={styles.saveButton} 
+                onPress={handleSave}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.saveButtonText}>
+                    {editingService ? 'Update Service' : 'Add Service'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </ScrollView>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f0f2f5' 
+  container: {
+    flex: 1,
+    backgroundColor: '#f0f2f5',
   },
   header: {
     backgroundColor: '#fff',
     padding: 20,
-    paddingBottom: 20, // Keep bottom padding
-    paddingTop: 20, // Will be adjusted by the component
+    paddingBottom: 20,
+    paddingTop: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
   },
+  headerContent: {
+    flex: 1,
+  },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+    fontSize: 22,
+    fontWeight: '700',
   },
   headerSubtitle: {
     fontSize: 14,
     color: '#666',
-    marginTop: 4,
+    marginTop: 2,
   },
-  listContainer: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-    overflow: 'hidden',
-  },
-  serviceImage: {
-    width: '100%',
-    height: 120,
-    resizeMode: 'cover',
-  },
-  serviceContent: {
-    padding: 16,
-  },
-  title: { 
-    fontWeight: 'bold', 
-    fontSize: 18,
-    color: '#333',
-    marginBottom: 4,
-  },
-  serviceDetails: {
-    fontSize: 14,
-    color: '#666',
-  },
-  editButton: { 
-    position: 'absolute', 
-    top: 12, 
-    right: 12,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    borderRadius: 20,
-    padding: 8,
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 30,
-    backgroundColor: '#007BFF',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
+  reviewsButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    elevation: 8,
-    shadowColor: '#007BFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    backgroundColor: '#f0f0f0',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  reviewsButtonText: {
+    fontWeight: '800',
+    fontSize: 14,
+    color: '#000',
+    marginLeft: 4,
   },
   loadingContainer: {
     flex: 1,
@@ -368,166 +383,211 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 10,
-    color: '#666',
     fontSize: 16,
+    color: '#666',
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
+    padding: 20,
   },
   emptyTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
+    fontSize: 22,
+    fontWeight: '700',
+    marginTop: 20,
+    marginBottom: 10,
   },
   emptyText: {
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 32,
+    marginBottom: 30,
+    lineHeight: 22,
   },
   addFirstButton: {
     backgroundColor: '#007BFF',
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 25,
+    alignItems: 'center',
   },
   addFirstButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     marginLeft: 8,
+    fontSize: 16,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+  // Note: Removed checkReviewsButton styles
+  listContainer: {
+    padding: 16,
+    paddingBottom: 100, // Extra padding for FAB
+  },
+  // Note: Removed reviewsBanner styles
+  serviceRow: {
+    flexDirection: 'row',
+    backgroundColor: '#fff',
+    padding: 18, // Increased from 15
+    borderRadius: 8,
+    alignItems: 'center',
+    borderWidth: 2, // Add border
+    borderColor: '#000', // Black border for high contrast
+  },
+  separator: {
+    height: 2, // Increased from 1
+    backgroundColor: '#000', // Changed from '#e0e0e0' to black
+    marginVertical: 12, // Increased from 8
+  },
+  imageColumn: {
+    width: 60, // Increased from 50
+    marginRight: 15,
+  },
+  serviceImage: {
+    width: 60, // Increased from 50
+    height: 60, // Increased from 50
+    borderRadius: 30, // Keep it circular
+    backgroundColor: '#f0f0f0',
+    borderWidth: 2, // Add border
+    borderColor: '#000', // Black border
+  },
+  imagePlaceholder: {
+    width: 60, // Increased from 50
+    height: 60, // Increased from 50
+    borderRadius: 30, // Keep it circular
+    backgroundColor: '#f0f0f0',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2, // Add border
+    borderColor: '#000', // Black border
   },
-  modal: {
+  nameColumn: {
+    flex: 1,
+    marginRight: 8,
+  },
+  serviceName: {
+    fontSize: 20, // Increased from 16
+    fontWeight: '900', // Changed from '600' to '900' for maximum boldness
+    color: '#000', // Ensure black color for high contrast
+  },
+  durationColumn: {
+    width: 70,
+    alignItems: 'center',
+  },
+  serviceDuration: {
+    fontSize: 16,
+    color: '#444',
+    fontWeight: '800', // Changed from '600' to '800' for bolder text
+  },
+  priceColumn: {
+    width: 80,
+    alignItems: 'flex-end',
+  },
+  servicePrice: {
+    fontSize: 20, // Increased from 16
+    fontWeight: '900', // Changed from '700' to '900'
+    color: '#000', // Changed from blue to black for consistent bold look
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: '#000', // Changed from blue to black for consistency
+    width: 64, // Increased from 56
+    height: 64, // Increased from 56
+    borderRadius: 32, // Keep it circular
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    flex: 1,
     backgroundColor: '#fff',
-    padding: 20,
-    width: '90%',
-    maxHeight: '85%', // Increase max height
-    borderRadius: 12,
+    marginTop: 50,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
-  modalTitle: { 
-    fontWeight: 'bold', 
-    fontSize: 20, 
-    marginBottom: 16,
-    color: '#333',
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  closeButton: {
+    padding: 5,
+  },
+  modalScroll: {
+    padding: 20,
+  },
+  imagePicker: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  imagePickerPlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderStyle: 'dashed',
+  },
+  pickedImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  imagePickerText: {
+    marginTop: 8,
+    color: '#666',
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 12,
   },
   input: {
     borderWidth: 1,
     borderColor: '#e0e0e0',
+    borderRadius: 8,
     padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
     fontSize: 16,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f9f9f9',
   },
-  modalContent: {
-    maxHeight: 400, // Set a specific height for scrollable content
-  },
-  scrollContent: {
-    paddingBottom: 20, // Add padding to the bottom of the scrollable content
-  },
-  imageSection: {
-    marginVertical: 20,
-    backgroundColor: '#f9f9f9', // Add background to make it visible
-    padding: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  imageLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  imageContainer: {
-    position: 'relative',
-    alignItems: 'center',
+  errorText: {
+    color: '#d32f2f',
+    marginTop: 10,
     marginBottom: 10,
   },
-  previewImage: {
-    width: 200,
-    height: 150,
+  saveButton: {
+    backgroundColor: '#007BFF',
+    padding: 16,
     borderRadius: 8,
-    resizeMode: 'cover',
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  imagePickerButton: {
-    borderWidth: 2,
-    borderColor: '#007BFF',
-    borderStyle: 'dashed',
-    borderRadius: 8,
-    padding: 30,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    minHeight: 100,
+    marginTop: 30,
+    marginBottom: 30,
   },
-  imagePickerText: {
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: '700',
     fontSize: 16,
-    color: '#007BFF',
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  cancel: { 
-    padding: 12,
-    paddingHorizontal: 20,
-  },
-  save: { 
-    padding: 12,
-    paddingHorizontal: 20,
-    backgroundColor: '#007BFF', 
-    borderRadius: 8,
-  },
-  saveDisabled: {
-    backgroundColor: '#ccc',
-  },
-  saveText: { 
-    color: '#fff', 
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  cancelText: { 
-    color: '#666',
-    fontSize: 16,
-  },
-  error: { 
-    color: '#f44336', 
-    marginBottom: 12,
-    fontSize: 14,
   },
 });
 

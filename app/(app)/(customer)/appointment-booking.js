@@ -1,198 +1,572 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Calendar as RNCalendar } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
-import { getBarberAvailability, createAppointment, getUserProfile } from '@/services/firebase';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import {
+  auth,
+  db,
+  getUserProfile,
+  getBarberAvailability,
+  bookAppointmentAndUpdateAvailability
+} from '@/services/firebase';
+import { scheduleAppointmentReminder } from '@/services/notifications';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 
-const DEFAULT_SLOTS = [
-  '09:00','09:30','10:00','10:30','11:00','11:30',
-  '12:00','12:30','13:00','13:30','14:00','14:30',
-  '15:00','15:30','16:00','16:30','17:00','17:30','18:00'
-];
+// REMOVE the legacy to24Hour(...) helper entirely
+// function to24Hour(timeStr = '') { ... }
 
-function buildNextDays(days = 14) {  // was 30
-  const out = [];
-  const now = new Date();
-  for (let i = 0; i < days; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() + i);
-    out.push(d);
-  }
-  return out;
+// Keep and use this one everywhere
+function normalizeTimeTo24h(raw = '') {
+  const s = String(raw).replace(/[\u202F\u00A0]/g, ' ').trim();
+  const cleaned = s.replace(/([AaPp])\.?\s*[Mm]\.?/g, (m, a) => ` ${a.toUpperCase()}M`).trim();
+  const parts = cleaned.split(' ');
+  const hhmm = parts[0] || '';
+  const ampm = (parts[1] || '').toUpperCase(); // AM | PM | ''
+  let [h, m] = hhmm.split(':');
+  if (h == null) return '';
+  if (m == null) m = '00';
+  let hour = parseInt(h, 10);
+  const min = parseInt(m, 10);
+  if (Number.isNaN(hour) || Number.isNaN(min)) return '';
+  if (ampm === 'PM' && hour !== 12) hour += 12;
+  if (ampm === 'AM' && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
-const dateKey = d => d.toISOString().split('T')[0];
+
+// Helpers for time math (add below to24Hour)
+const toMins = (hhmm) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+const minsToHHMM = (mins) => `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`;
 
 export default function AppointmentBookingScreen() {
-  const { barberId } = useLocalSearchParams();
+  const params = useLocalSearchParams();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [barberAvailability, setBarberAvailability] = useState({});
-  const [userProfile, setUserProfile] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(buildNextDays()[0]);
-  const [selectedSlot, setSelectedSlot] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  const scrollRef = useRef(null);
+  const scrollViewRef = useRef(null);
+  const [calendarY, setCalendarY] = useState(null);
 
+  const barberId = params.barberId;
+  const barberName = params.barberName || '';
+  const serviceId = params.serviceId;              // NEW
+  const serviceName = params.serviceName || '';    // NEW
+  // Price safe default for display
+  const servicePrice = Number(params.servicePrice ?? params.price ?? 0);
+  // REQUIRED: duration must be provided by previous screen (no default)
+  const serviceDurationRaw = params.serviceDuration ?? params.duration;
+  const serviceDuration = Number(serviceDurationRaw);
+  const durationValid = Number.isFinite(serviceDuration) && serviceDuration > 0;
+
+  useEffect(() => {
+    if (!barberId) {
+      Alert.alert(
+        'Missing Information',
+        'Barber information is missing. Please go back and select a barber.',
+        [{ text: 'Go Back', onPress: () => router.back() }]
+      );
+    }
+  }, [barberId, router]);
+
+  useEffect(() => {
+    if (!durationValid) {
+      Alert.alert(
+        'Missing Service Duration',
+        'Please select a service with a valid duration before booking.',
+        [{ text: 'Go Back', onPress: () => router.back() }]
+      );
+    }
+  }, [durationValid, router]);
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [barberAvailability, setBarberAvailability] = useState(null);
+  const [userProfile, setUserProfile] = useState(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  // Derive a safe barber name (must be before any returns)
+  const displayBarberName = useMemo(
+    () => (userProfile?.name || barberName || '').trim(),
+    [userProfile?.name, barberName]
+  );
+  const [availability, setAvailability] = useState([]);
+  const [markedDates, setMarkedDates] = useState({});
+  const [selectedKey, setSelectedKey] = useState(null);
+  const [selectedSlot, setSelectedSlot] = useState(null);
+  const [timeSlots, setTimeSlots] = useState([]);
+  const [filteredSlots, setFilteredSlots] = useState([]); // display strings
+
+  // Replace load() to pull dates/times from DB (no generated slots)
   const load = useCallback(async () => {
+    setLoading(true);
     try {
-      if (!barberId) {
-        Alert.alert('Error', 'Missing barber ID');
-        return;
-      }
-      const [avail, user] = await Promise.all([
+      const [barberInfo, avail] = await Promise.all([
+        getUserProfile(barberId),
         getBarberAvailability(barberId),
-        getUserProfile(barberId) // if you meant current user, adjust to auth.currentUser.uid
       ]);
-      setBarberAvailability(avail || {});
-      setUserProfile(user || {});
-    } catch (e) {
-      Alert.alert('Load Error', e.message);
+      setUserProfile(barberInfo || {});
+      setBarberAvailability({
+        availableDates: avail.availableDates,
+        allowedSlotsByDate: avail.allowedSlotsByDate,
+      });
+      const marked = {};
+      avail.availableDates.forEach(d => { marked[d] = { marked: true, dotColor: 'green' }; });
+      setMarkedDates(marked);
     } finally {
       setLoading(false);
     }
   }, [barberId]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const days = useMemo(() => buildNextDays(14), []);
-  const selectedKey = dateKey(selectedDate);
-
-  const slotsForDay = useMemo(() => {
-    const avail = barberAvailability?.[selectedKey];
-    if (Array.isArray(avail) && avail.length) return avail;
-    return DEFAULT_SLOTS; // fallback if none stored
+  useEffect(() => {
+    if (!barberAvailability) return;
+    const availableDatesArray = barberAvailability.availableDates || [];
+    // REMOVE default generation – no defaults, only DB availability
+    // if (availableDatesArray.length === 0) {
+    //   generateDefaultAvailability();
+    //   return;
+    // }
+    setAvailability(availableDatesArray);
+    const marked = {};
+    availableDatesArray.forEach(date => {
+      marked[date] = { marked: true, dotColor: 'green' };
+    });
+    if (selectedKey) {
+      marked[selectedKey] = {
+        ...marked[selectedKey],
+        selected: true,
+        selectedColor: '#2196F3'
+      };
+    }
+    setMarkedDates(marked);
   }, [barberAvailability, selectedKey]);
 
-  async function submit() {
-    if (!selectedSlot) {
-      Alert.alert('Select a time slot first');
+  const loadCurrentUserProfile = useCallback(async () => {
+    try {
+      if (auth.currentUser) {
+        const userDoc = await getUserProfile(auth.currentUser.uid);
+        setCurrentUserProfile(userDoc);
+      }
+    } catch (error) {
+      // silent
+    }
+  }, []);
+
+  // REMOVE bookedSlots loader – not used when availability is authoritative
+  // const loadBookedSlots = useCallback(async (dateKey, barberId) => { ... }, []);
+
+  // Use DB availability only (no generated defaults)
+  // Only show starts that fit duration (uses raw24 from DB)
+  const generateTimeSlots = useCallback((dateString) => {
+    const raw24 = barberAvailability?.allowedSlotsByDate?.[dateString] || [];
+    if (!raw24.length || !durationValid) { setTimeSlots([]); setFilteredSlots([]); return; }
+
+    let interval = 30;
+    for (let i = 1; i < raw24.length; i++) {
+      const d = toMins(raw24[i]) - toMins(raw24[i - 1]);
+      if (d > 0) interval = Math.min(interval, d);
+    }
+    const steps = Math.max(1, Math.ceil(serviceDuration / interval));
+    const set24 = new Set(raw24);
+
+    const validStarts = raw24.filter((start) => {
+      const startM = toMins(start);
+      for (let k = 0; k < steps; k++) {
+        if (!set24.has(minsToHHMM(startM + k * interval))) return false;
+      }
+      return true;
+    });
+
+    const toDisplay = (hhmm) => {
+      const [h, m] = hhmm.split(':').map(Number);
+      const h12 = (h % 12) || 12;
+      const ampm = h < 12 ? 'A.M.' : 'P.M.';
+      return `${h12}:${String(m).padStart(2, '0')} ${ampm}`;
+    };
+
+    const slots = validStarts.map(toDisplay);
+    setTimeSlots(slots);
+    setFilteredSlots(slots);
+  }, [barberAvailability, durationValid, serviceDuration]);
+
+  // When a day is selected, only allow dates present in availability
+  const handleDayPress = useCallback((day) => {
+    const selectedDate = day.dateString; // YYYY-MM-DD
+    const times = barberAvailability?.allowedSlotsByDate?.[selectedDate];
+
+    // If the barber did not populate this date with times, treat as day off
+    if (!Array.isArray(times) || times.length === 0) {
+      Alert.alert('barber day off');
+      setSelectedKey(null);
+      setSelectedSlot(null);
+      setTimeSlots([]);
+      setFilteredSlots([]);
       return;
     }
+
+    setSelectedKey(selectedDate);
+    setSelectedSlot(null);
+    generateTimeSlots(selectedDate);
+  }, [barberAvailability, generateTimeSlots]);
+
+  // Since availability is authoritative, filteredSlots === generated timeSlots
+  useEffect(() => {
+    if (!selectedKey) return;
+    setFilteredSlots(timeSlots);
+  }, [selectedKey, timeSlots]);
+
+  // Simplify time selection: if it's shown, it's selectable
+  const handleSelectTimeSlot = (slot) => {
+    setSelectedSlot(slot);
+  };
+
+  // Robust customer name derivation
+  const getCustomerName = () => {
+    const authName = auth.currentUser?.displayName;
+    const profile = currentUserProfile || {};
+    const nameFields = [
+      profile.name,
+      [profile.firstName, profile.lastName].filter(Boolean).join(' ').trim(),
+      authName,
+      profile.username,
+      auth.currentUser?.email
+    ].filter(Boolean);
+    return nameFields[0] || 'Customer';
+  };
+
+  // Submit: book and atomically remove time(s) from availability
+  // Replace submit with revalidation using the same logic
+  const submit = async () => {
     try {
+      if (!durationValid) { Alert.alert('Missing Service Duration', 'Please select a service with a valid duration.'); return; }
+      if (!selectedKey || !selectedSlot) { Alert.alert('Select Time', 'Please select a date and time.'); return; }
       setSubmitting(true);
-      const startISO = `${selectedKey}T${selectedSlot}:00.000Z`;
-      const maxDate = new Date();
-      maxDate.setDate(maxDate.getDate() + 14);
-      if (new Date(selectedKey) > maxDate) {
-        Alert.alert('Unavailable', 'You can only book up to 14 days ahead.');
+
+      // IMPROVED TIME VALIDATION: Fix "A.M." vs "AM" format issues
+      
+      // Convert selected time from display format ("10:30 A.M.") to 24h ("10:30") 
+      const time24 = (() => {
+        const time = selectedSlot || '';
+        // Match time with or without periods in AM/PM
+        const match = time.match(/(\d{1,2}):(\d{2})\s*([AaPp]\.?[Mm]\.?)/);
+        if (!match) return null;
+        
+        let [_, hours, minutes, period] = match;
+        hours = parseInt(hours, 10);
+        minutes = parseInt(minutes, 10);
+        
+        // Handle PM conversion
+        if (period.toLowerCase().includes('p') && hours !== 12) {
+          hours += 12;
+        }
+        // Handle 12 AM -> 00
+        if (period.toLowerCase().includes('a') && hours === 12) {
+          hours = 0;
+        }
+        
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      })();
+      
+      console.log('BOOKING TIME DEBUG:', { 
+        selectedSlot, 
+        time24, 
+        availableTimes: barberAvailability?.allowedSlotsByDate?.[selectedKey] || []
+      });
+
+      // Check if converted 24h time is in available slots
+      if (!time24 || !(barberAvailability?.allowedSlotsByDate?.[selectedKey] || []).includes(time24)) {
+        Alert.alert('Time unavailable', 'This time slot is no longer available. Please select another time.');
+        setSubmitting(false);
         return;
       }
-      await createAppointment({
+      
+      // Proceed with the booking
+      const customerName = getCustomerName();
+      const resolvedBarberName = displayBarberName;
+
+      const { id: appointmentId } = await bookAppointmentAndUpdateAvailability({
         barberId,
+        customerId: auth.currentUser?.uid,
+        customerName,
+        serviceId,
+        serviceName,
+        price: servicePrice,
+        duration: serviceDuration,
         date: selectedKey,
         time: selectedSlot,
-        start: startISO
+        barberName: resolvedBarberName,
       });
-      Alert.alert('Success', 'Appointment booked.');
-      router.back();
+
+      // Schedule reminders
+      const appt = {
+        id: appointmentId,
+        barberId,
+        barberName: resolvedBarberName, // use resolved name
+        serviceId,
+        serviceName,
+        servicePrice: Number(servicePrice),
+        price: Number(servicePrice),
+        duration: Number(serviceDuration),
+        date: selectedKey,
+        time: selectedSlot,
+      };
+      await scheduleAppointmentReminder(appt, auth.currentUser?.uid);
+
+      // Optimistic local removal
+      setBarberAvailability(prev => {
+        const map = { ...(prev?.allowedSlotsByDate || {}) };
+        const current = map[selectedKey] ? [...map[selectedKey]] : [];
+        if (!current.length) return prev;
+
+        let localInterval = 30;
+        for (let i = 1; i < current.length; i++) {
+          const d = toMins(current[i]) - toMins(current[i - 1]);
+          if (d > 0) localInterval = Math.min(localInterval, d);
+        }
+        const localSteps = Math.max(1, Math.ceil(serviceDuration / localInterval));
+        const s24 = normalizeTimeTo24h(selectedSlot);
+        const startMLocal = toMins(s24);
+        const consume = Array.from({ length: localSteps }, (_, k) => minsToHHMM(startMLocal + k * localInterval));
+        const remaining = current.filter(t => !consume.includes(t));
+        if (remaining.length) map[selectedKey] = remaining; else delete map[selectedKey];
+
+        return { ...prev, allowedSlotsByDate: map, availableDates: Object.keys(map).sort() };
+      });
+
+      Alert.alert('Booked', 'Your appointment has been created.');
+      router.replace({
+        pathname: '/(app)/(customer)/appointment-confirmation',
+        params: {
+          appointmentId,
+          barberId,
+          barberName: resolvedBarberName, // use resolved name
+          serviceId,
+          serviceName,
+          servicePrice: String(servicePrice),
+          serviceDuration: String(serviceDuration),
+          date: selectedKey,
+          time: selectedSlot,
+        },
+      });
     } catch (e) {
-      Alert.alert('Error', e.message);
+      console.error('Booking failed:', e);
+      Alert.alert('Booking failed', e.message || 'There was a problem booking your appointment.');
     } finally {
       setSubmitting(false);
     }
-  }
+  };
+
+  // Ensure load runs on mount
+  useEffect(() => {
+    load();
+    loadCurrentUserProfile();
+  }, [load, loadCurrentUserProfile]);
 
   if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.loading}>Loading...</Text>
-      </View>
-    );
+    return <ActivityIndicator size="large" style={{ flex: 1 }} />;
   }
 
+  const isDateDisabled = (dateString) => {
+    // Disable dates not in availability
+    if (!barberAvailability?.allowedSlotsByDate) return true;
+    return !Object.keys(barberAvailability.allowedSlotsByDate).includes(dateString);
+  };
+
+  const formatPrice = (value) => Number(value ?? 0).toFixed(2);
+
+  // REMOVE the duplicate hook below (was causing hook order mismatch)
+  // const displayBarberName = useMemo(
+  //   () => (userProfile?.name || barberName || '').trim(),
+  //   [userProfile?.name, barberName]
+  // );
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={22} color="#222" />
-        </TouchableOpacity>
-        <Text style={styles.header}>Book Appointment</Text>
-        <View style={{ width: 32 }} />
-      </View>
-
-      <Text style={styles.section}>Select Date</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daysRow}>
-        {days.map(d => {
-          const k = dateKey(d);
-          const isSelected = k === selectedKey;
-          return (
-            <TouchableOpacity
-              key={k}
-              style={[styles.dayChip, isSelected && styles.dayChipSelected]}
-              onPress={() => { setSelectedDate(d); setSelectedSlot(null); }}
-            >
-              <Text style={[styles.dayText, isSelected && styles.dayTextSelected]}>
-                {d.toLocaleDateString(undefined, { weekday: 'short' })}
-              </Text>
-              <Text style={[styles.dayDate, isSelected && styles.dayTextSelected]}>
-                {d.getDate()}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
-
-      <Text style={styles.section}>Available Times</Text>
-      <View style={styles.slotsWrap}>
-        {slotsForDay.map(slot => {
-          const active = slot === selectedSlot;
-          return (
-            <TouchableOpacity
-              key={slot}
-              style={[styles.slot, active && styles.slotActive]}
-              onPress={() => setSelectedSlot(slot)}
-            >
-              <Text style={[styles.slotText, active && styles.slotTextActive]}>{slot}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <TouchableOpacity
-        disabled={!selectedSlot || submitting}
-        style={[styles.submitBtn, (!selectedSlot || submitting) && styles.submitBtnDisabled]}
-        onPress={submit}
+    <View style={styles.container}>
+      <ScrollView
+        ref={scrollViewRef}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.submitText}>
-          {submitting ? 'Booking...' : selectedSlot ? `Book ${selectedSlot}` : 'Select a Time'}
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <Text style={styles.title}>Book Appointment</Text>
+        <Text style={styles.subtitle}>{serviceName} with {displayBarberName}</Text>
+
+        <View style={styles.calendarContainer}>
+          <RNCalendar
+            // Always allow day press; handleDayPress will show "barber day off" if needed
+            onDayPress={handleDayPress}
+            markedDates={markedDates}
+            horizontal={true}
+            pagingEnabled={true}
+            style={styles.calendar}
+          />
+        </View>
+
+        <View style={styles.timeSlotsContainer}>
+          {timeSlots.length === 0 && (
+            <Text style={styles.noTimeSlotsText}>
+              {!durationValid
+                ? 'Select a service with a valid duration to see times'
+                : selectedKey
+                  ? 'No available times'
+                  : 'Select a date to see available times'}
+            </Text>
+          )}
+          {timeSlots.length > 0 && (
+            <View style={styles.timeSlotButtons}>
+              {filteredSlots.map((slot) => (
+                <TouchableOpacity
+                  key={slot}
+                  onPress={() => handleSelectTimeSlot(slot)}
+                  style={[
+                    styles.timeSlotButton,
+                    selectedSlot === slot && styles.selectedTimeSlotButton
+                  ]}
+                  disabled={submitting}
+                >
+                  <Text style={styles.timeSlotButtonText}>{slot}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.detailsContainer}>
+          <Text style={styles.detailsTitle}>Appointment Details</Text>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Service:</Text>
+            <Text style={styles.detailValue}>{serviceName}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Barber:</Text>
+            <Text style={styles.detailValue}>{displayBarberName}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Date:</Text>
+            <Text style={styles.detailValue}>{selectedKey}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Time:</Text>
+            <Text style={styles.detailValue}>{selectedSlot}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Price:</Text>
+            <Text style={styles.detailValue}>${formatPrice(servicePrice)}</Text>
+          </View>
+          <View style={styles.detailRow}>
+            <Text style={styles.detailLabel}>Duration:</Text>
+            <Text style={styles.detailValue}>
+              {durationValid ? `${serviceDuration} min` : '—'}
+            </Text>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          onPress={submit}
+          style={styles.bookButton}
+          disabled={submitting || !durationValid}
+        >
+          <Text style={styles.bookButtonText}>
+            {submitting ? 'Booking...' : 'Book Appointment'}
+          </Text>
+        </TouchableOpacity>
+
+        {submitting && (
+          <ActivityIndicator size="small" style={styles.submittingIndicator} />
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
-  loading: { marginTop: 12, fontSize: 16 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  backBtn: {
-    width: 32, height: 32, borderRadius: 16, backgroundColor: '#eee',
-    alignItems: 'center', justifyContent: 'center'
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
   },
-  header: { flex: 1, textAlign: 'center', fontSize: 20, fontWeight: '600' },
-  section: { fontSize: 16, fontWeight: '600', marginTop: 12, marginBottom: 8 },
-  daysRow: { marginBottom: 8 },
-  dayChip: {
-    width: 68, marginRight: 8, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: '#eee', alignItems: 'center'
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 32,
   },
-  dayChipSelected: { backgroundColor: '#222' },
-  dayText: { fontSize: 12, color: '#555' },
-  dayDate: { fontSize: 16, fontWeight: '600', color: '#333' },
-  dayTextSelected: { color: '#fff' },
-  slotsWrap: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
-  slot: {
-    paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8,
-    backgroundColor: '#f1f1f1', margin: 4
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
-  slotActive: { backgroundColor: '#2563eb' },
-  slotText: { fontSize: 14, color: '#333' },
-  slotTextActive: { color: '#fff', fontWeight: '500' },
-  submitBtn: {
-    marginTop: 24, backgroundColor: '#2563eb', borderRadius: 10,
-    paddingVertical: 14, alignItems: 'center'
+  subtitle: {
+    fontSize: 18,
+    color: '#666',
+    marginBottom: 16,
   },
-  submitBtnDisabled: { opacity: 0.6 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '600' }
+  calendarContainer: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 24,
+  },
+  calendar: {
+    // height: 350,
+    // paddingTop: 8,
+    // paddingBottom: 8,
+  },
+  timeSlotsContainer: {
+    marginBottom: 24,
+  },
+  noTimeSlotsText: {
+    textAlign: 'center',
+    color: '#999',
+    marginBottom: 16,
+  },
+  timeSlotButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  timeSlotButton: {
+    backgroundColor: '#f0f0f0',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    margin: 4,
+  },
+  selectedTimeSlotButton: {
+    backgroundColor: '#2196F3',
+  },
+  timeSlotButtonText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  detailsContainer: {
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 24,
+  },
+  detailsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  detailLabel: {
+    fontSize: 16,
+    color: '#555',
+  },
+  detailValue: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  bookButton: {
+    backgroundColor: '#2196F3',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  bookButtonText: {
+    fontSize: 18,
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  submittingIndicator: {
+    marginTop: 8,
+  },
 });

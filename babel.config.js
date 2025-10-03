@@ -2,11 +2,12 @@ module.exports = function (api) {
   api.cache(true);
   return {
     presets: ['babel-preset-expo'],
-    plugins: [
-      [
-        'module-resolver',
-        { alias: { '@': './src' } }
-      ]
+    // Do not apply aliases to node_modules
+    overrides: [
+      {
+        test: ['./app', './src'],
+        plugins: [['module-resolver', { alias: { '@': './src' } }]]
+      }
     ]
   };
 };

@@ -1,32 +1,18 @@
 // metro.config.js
 
-// metro.config.js
-//const { getDefaultConfig } = require('expo/metro-config');
+// Learn more https://docs.expo.io/guides/customizing-metro
+const { getDefaultConfig } = require('expo/metro-config');
 
-//const config = getDefaultConfig(__dirname);
-//module.exports = config;
+/** @type {import('expo/metro-config').MetroConfig} */
+const config = getDefaultConfig(__dirname, {
+  // [Web-only]: Enables CSS support in Metro.
+  isCSSEnabled: true,
+});
 
-// metro.config.js
-const { getDefaultConfig } = require('@expo/metro-config');
-
-const config = getDefaultConfig(__dirname);
-config.resolver.sourceExts.push('cjs');
-config.resolver.unstable_enablePackageExports = false;
+// Force bundling for production
+config.resolver.sourceExts = process.env.NODE_ENV === 'production' 
+  ? [...config.resolver.sourceExts] 
+  : [...config.resolver.sourceExts, 'mjs'];
 
 module.exports = config;
-
-
-
-/*const { getDefaultConfig } = require('expo/metro-config');
-
-const config = getDefaultConfig(__dirname);
-
-config.resolver.sourceExts.push('cjs');
-config.resolver.unstable_enablePackageExports = false;
-
-config.resolver.extraNodeModules = {
-  ...config.resolver.extraNodeModules,
-/*  os: require.resolve('os-browserify'),
-  'whatwg-fetch': require.resolve('whatwg-fetch'),
-};*/
 

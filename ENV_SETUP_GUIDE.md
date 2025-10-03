@@ -21,26 +21,26 @@ For CI/CD builds with EAS, you'll need to set up secrets that can be securely us
 
 ```bash
 # For development/test Firebase config
-eas secret:create --scope project --name FIREBASE_DEV_API_KEY --value "your_dev_api_key"
-eas secret:create --scope project --name FIREBASE_DEV_AUTH_DOMAIN --value "your_dev_auth_domain"
-eas secret:create --scope project --name FIREBASE_DEV_PROJECT_ID --value "your_dev_project_id"
-eas secret:create --scope project --name FIREBASE_DEV_STORAGE_BUCKET --value "your_dev_storage_bucket"
-eas secret:create --scope project --name FIREBASE_DEV_MESSAGING_SENDER_ID --value "your_dev_messaging_sender_id"
-eas secret:create --scope project --name FIREBASE_DEV_APP_ID --value "your_dev_app_id"
-eas secret:create --scope project --name FIREBASE_DEV_MEASUREMENT_ID --value "your_dev_measurement_id"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_DEV_API_KEY --value "your_dev_api_key"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_DEV_AUTH_DOMAIN --value "your_dev_auth_domain"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_DEV_PROJECT_ID --value "your_dev_project_id"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_DEV_STORAGE_BUCKET --value "your_dev_storage_bucket"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_DEV_MESSAGING_SENDER_ID --value "your_dev_messaging_sender_id"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_DEV_APP_ID --value "your_dev_app_id"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_DEV_MEASUREMENT_ID --value "your_dev_measurement_id"
 
 # For production Firebase config
-eas secret:create --scope project --name FIREBASE_PROD_API_KEY --value "your_prod_api_key"
-eas secret:create --scope project --name FIREBASE_PROD_AUTH_DOMAIN --value "your_prod_auth_domain"
-eas secret:create --scope project --name FIREBASE_PROD_PROJECT_ID --value "your_prod_project_id"
-eas secret:create --scope project --name FIREBASE_PROD_STORAGE_BUCKET --value "your_prod_storage_bucket"
-eas secret:create --scope project --name FIREBASE_PROD_MESSAGING_SENDER_ID --value "your_prod_messaging_sender_id"
-eas secret:create --scope project --name FIREBASE_PROD_APP_ID --value "your_prod_app_id"
-eas secret:create --scope project --name FIREBASE_PROD_MEASUREMENT_ID --value "your_prod_measurement_id"
+eas secret:create --scope project --name EXPO_PUBLC_FIREBASE_PROD_API_KEY --value "your_prod_api_key"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_PROD_AUTH_DOMAIN --value "your_prod_auth_domain"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_PROD_PROJECT_ID --value "your_prod_project_id"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_PROD_STORAGE_BUCKET --value "your_prod_storage_bucket"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_PROD_MESSAGING_SENDER_ID --value "your_prod_messaging_sender_id"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_PROD_APP_ID --value "your_prod_app_id"
+eas secret:create --scope project --name EXPO_PUBLIC_FIREBASE_PROD_MEASUREMENT_ID --value "your_prod_measurement_id"
 
 # Other API keys
-eas secret:create --scope project --name STRIPE_PUBLISHABLE_KEY --value "your_stripe_key"
-eas secret:create --scope project --name OPENAI_API_KEY --value "your_openai_key"
+eas secret:create --scope project --name EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY --value "your_stripe_key"
+eas secret:create --scope project --name EXPO_PUBLIC_OPENAI_API_KEY --value "your_openai_key"
 ```
 
 ### Verify Secrets

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Image, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Image, StyleSheet, ActivityIndicator, SafeAreaView } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { getBarbersByZipcode } from '@/services/firebase';
 import DebugUser from '@/components/DebugUser';
@@ -42,12 +42,22 @@ export default function SelectBarberScreen() {
 
   const handleBarberSelect = (barber) => {
     console.log('Selected Barber:', barber);
-    // Navigate to the barber's services page with the selected barber's data
-  router.push({
-  pathname: '/(app)/(customer)/barber-services',
-  params: { barber: JSON.stringify(barber) }, // or whatever the correct variable is
-});
-
+    
+    // Make sure barber object has an ID
+    if (!barber || !barber.id) {
+      console.error('Invalid barber data:', barber);
+      return;
+    }
+    
+    // Navigate to the barber's services page with individual parameters
+    router.push({
+      pathname: '/(app)/(customer)/barber-services',
+      params: { 
+        barberId: barber.id,
+        barberName: barber.name,
+        barber: JSON.stringify(barber) // Keep this for backward compatibility
+      }
+    });
   };
 
   if (loading) {
@@ -60,24 +70,36 @@ export default function SelectBarberScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Choose a Barber</Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
       <FlatList
         data={barbers}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, idx) => String(item?.id ?? idx)}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.card} onPress={() => handleBarberSelect(item)}>
-            <Image source={{ uri: item.image }} style={styles.avatar} />
+            <Image
+              source={{ uri: item.image || 'https://via.placeholder.com/60' }}
+              style={styles.avatar}
+              defaultSource={require('assets/icon-512.png')}
+            />
             <View style={styles.info}>
               <Text style={styles.name}>{item.name}</Text>
               <Text style={styles.rating}>⭐ {item.rating || 0}</Text>
             </View>
           </TouchableOpacity>
         )}
-        ListEmptyComponent={<Text>No barbers found in this area</Text>}
+        ListHeaderComponent={
+          <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+            <Text style={styles.title}>Choose a Barber</Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+          </View>
+        }
+        ListEmptyComponent={<Text style={styles.emptyText}>No barbers found in this area</Text>}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 80 }}
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator
+        keyboardShouldPersistTaps="handled"
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -124,6 +146,11 @@ const styles = StyleSheet.create({
   error: {
     color: 'red',
     marginBottom: 10,
+  },
+  emptyText: {
+    textAlign: 'center',
+    color: '#888',
+    marginTop: 20,
   },
 });
 

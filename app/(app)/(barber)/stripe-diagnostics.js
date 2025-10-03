@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -9,7 +9,7 @@ import { stripeConfig, stripeBackendUrl } from '@/services/stripeConfig';
 import Logger from '@/utils/debugLogger';
 import { useRouter } from 'expo-router';
 
-const StripeDiagnosticScreen = () => {
+export default function StripeDiagnostics() {
   const router = useRouter();
   const [logs, setLogs] = useState([]);
   const [backendStatus, setBackendStatus] = useState('unknown');
@@ -541,5 +541,3 @@ const styles = StyleSheet.create({
     padding: 16,
   },
 });
-
-export default StripeDiagnosticScreen;

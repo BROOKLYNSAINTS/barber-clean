@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useFocusEffect } from '@react-navigation/native'; // <-- add
+import { useFocusEffect } from '@react-navigation/native';
 import {
   SafeAreaView,
   View,
@@ -10,10 +10,10 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
   Platform,
-  Button,
   StyleSheet
 } from 'react-native';
-import * as Speech from 'expo-speech';
+import { Ionicons } from '@expo/vector-icons';
+import * as Speech from '@/stubs/speech'; // was 'expo-speech', now stubbed
 import {
   getUserProfile,
   getBarbersByZipcode,
@@ -22,7 +22,7 @@ import {
   createAppointment,
   getLastAppointmentForUser,
   cancelAppointment,
-  getRecentAppointmentsForUser   // <-- added
+  getRecentAppointmentsForUser
 } from '@/services/firebase';
 import {
   addAppointmentToCalendar,
@@ -36,12 +36,15 @@ import { generateChatResponse } from '@/services/openai';
 import { useAuth } from '@/contexts/AuthContext';
 import { serverTimestamp } from 'firebase/firestore';
 
-// ---- ADD (or move) THESE HELPERS TO THE VERY TOP (after imports) ----
-function cleanSpaces(s=''){ return (s||'').replace(/[\u202F\u00A0]/g,' ').replace(/\s+/g,' ').trim(); }
-function normalizeDisplayTime(t=''){
+// ---- Helper Utilities (single source of truth) ----
+function cleanSpaces(s='') { 
+  return (s||'').replace(/[\u202F\u00A0]/g,' ').replace(/\s+/g,' ').trim(); 
+}
+
+function normalizeDisplayTime(t='') {
   t = cleanSpaces(t);
   const m24 = t.match(/^(\d{1,2}):(\d{2})$/);
-  if (m24 && +m24[1] <= 23){
+  if (m24 && +m24[1] <= 23) {
     let h = +m24[1]; const mins = m24[2]; const mer = h>=12?'PM':'AM';
     if(h===0) h=12; else if(h>12) h-=12;
     return `${h}:${mins} ${mer}`;
@@ -50,7 +53,8 @@ function normalizeDisplayTime(t=''){
   if(!m) return t;
   return `${parseInt(m[1],10)}:${m[2]} ${m[3].toUpperCase()}`;
 }
-function toTime24(t=''){
+
+function toTime24(t='') {
   const m = normalizeDisplayTime(t).match(/^(\d{1,2}):(\d{2})\s(AM|PM)$/);
   if(!m) return null;
   let h = +m[1]; const mins = m[2]; const mer = m[3];
@@ -58,7 +62,8 @@ function toTime24(t=''){
   if(mer==='AM' && h===12) h=0;
   return `${h.toString().padStart(2,'0')}:${mins}`;
 }
-function anyTo24(raw=''){
+
+function anyTo24(raw='') {
   raw = cleanSpaces(raw);
   let m = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if(m) return toTime24(`${m[1]}:${m[2]} ${m[3].toUpperCase()}`);
@@ -68,30 +73,32 @@ function anyTo24(raw=''){
   if(m && +m[1] <= 23) return `${m[1].padStart(2,'0')}:${m[2]}`;
   return null;
 }
-function parseDayOffset(text=''){
+
+function parseDayOffset(text='') {
   const lower=text.toLowerCase();
   if(lower.includes('today')) return 0;
   if(lower.includes('tomorrow')) return 1;
   const days=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
   const now=new Date(); const cur=now.getDay();
-  for(let i=0;i<days.length;i++){
-    if(lower.includes(days[i])){ let d=(i-cur+7)%7; if(d===0)d=7; return d; }
+  for(let i=0;i<days.length;i++) {
+    if(lower.includes(days[i])) { 
+      let d=(i-cur+7)%7; 
+      if(d===0) d=7; 
+      return d; 
+    }
   }
   return null;
 }
-async function bookAppointment(appointment){
+
+async function bookAppointment(appointment) {
   const display = normalizeDisplayTime(appointment.time);
   const time24 = toTime24(display);
   if(!time24) throw new Error('Invalid time');
-
-  // Optional unique key (uncomment if you need it elsewhere)
-  // const userDateTimeKey = `${appointment.customerId}_${appointment.date}_${time24}`;
 
   const docData = {
     ...appointment,
     time: display,
     time24,
-    // userDateTimeKey,
     createdAt: serverTimestamp()
   };
 
@@ -106,18 +113,18 @@ async function bookAppointment(appointment){
 
   return full;
 }
-// ---- END HELPERS ----
 
 export default function ChatAssistantScreen() {
   const { currentUser } = useAuth();
   const scrollRef = useRef(null);
   const hasShownMenu = useRef(false);
 
+  // Early return if no user
   if (!currentUser) {
     return (
-      <SafeAreaView style={{ flex:1, justifyContent:'center', alignItems:'center', backgroundColor:'#fff' }}>
-        <ActivityIndicator size="large" color="#007bff" />
-        <Text style={{ marginTop:12 }}>Loading user...</Text>
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2563EB" />
+        <Text style={styles.loadingText}>Loading user...</Text>
       </SafeAreaView>
     );
   }
@@ -141,7 +148,7 @@ export default function ChatAssistantScreen() {
   const [barbers, setBarbers] = useState([]);
   const [services, setServices] = useState([]);
   const [pendingCancel, setPendingCancel] = useState(null);
-  const [cancelStage, setCancelStage] = useState('idle'); // idle | list | confirm
+  const [cancelStage, setCancelStage] = useState('idle'); 
   const [recentAppointments, setRecentAppointments] = useState([]);
   const [cancelPick, setCancelPick] = useState(null);
   const [lastAppointment, setLastAppointment] = useState(null);
@@ -152,9 +159,10 @@ export default function ChatAssistantScreen() {
     return isNaN(num) ? null : num;
   };
 
-  // Single formatter helpers (avoid redefining later)
+  // Formatter helpers
   const listBarbers = (arr = []) =>
     arr.map((b,i)=>`${i+1}. ${b.name}${b.address?' - '+b.address:''}`).join('\n');
+    
   const listServices = (arr = []) =>
     arr.map((s,i)=>`${i+1}. ${s.name}${s.price!=null?` — $${(+s.price).toFixed(2)}`:''}`).join('\n');
 
@@ -177,15 +185,12 @@ export default function ChatAssistantScreen() {
     setProcessing(false);
     setCancelStage('idle');
     setRecentAppointments([]);
-    setCancelPick(null); // <-- fixed missing parenthesis
+    setCancelPick(null);
   }, []);
-
-  // REMOVE the entire duplicate block that started with:
-  // // ---------- Helper Utilities (single source of truth) ----------
-  // (Delete all those redefinitions of cleanSpaces, normalizeDisplayTime, toTime24, etc.)
 
   const addBotMessage = (text) =>
     setMessages(prev => [...prev, { id: Date.now().toString(), sender:'bot', text }]);
+    
   const addUserMessage = (text) =>
     setMessages(prev => [...prev, { id: Date.now().toString(), sender:'user', text }]);
 
@@ -242,12 +247,15 @@ export default function ChatAssistantScreen() {
     }
 
     const modeMessages = {
-      new: "Great! Let’s schedule your new haircut. Would you like to see the barbers I have in your area?",
+      new: "Great! Let's schedule your new haircut. Would you like to see the barbers I have in your area?",
       repeat: "Booking your previous haircut. What time would you like to come in?",
-      pay: "Let’s complete your payment. Do you want to pay with card or wallet?"
+      pay: "Let's complete your payment. Do you want to pay with card or wallet?"
     };
     const message = modeMessages[selectedMode] || '';
-    if (message) { addBotMessage(message); Speech.speak(message); }
+    if (message) { 
+      addBotMessage(message); 
+      Speech.speak(message); 
+    }
   };
 
   const handleSendMessage = async () => {
@@ -259,26 +267,25 @@ export default function ChatAssistantScreen() {
     setError('');
 
     // If no mode selected yet, allow picking 1/2/3/4 or names
-if (!mode) {
-  const t = userText.toLowerCase();
-  const pick =
-    t === '1' || t.includes('new') ? 'new' :
-    t === '2' || t.includes('repeat') || t.includes('previous') ? 'repeat' :
-    t === '3' || t.includes('cancel') ? 'cancel' :
-    t === '4' || t.includes('pay') ? 'pay' : null;
+    if (!mode) {
+      const t = userText.toLowerCase();
+      const pick =
+        t === '1' || t.includes('new') ? 'new' :
+        t === '2' || t.includes('repeat') || t.includes('previous') ? 'repeat' :
+        t === '3' || t.includes('cancel') ? 'cancel' :
+        t === '4' || t.includes('pay') ? 'pay' : null;
 
-  if (pick) {
-    await handleOptionSelect(pick); // reuse your existing function
-    setLoading(false);
-    return;
-  }
+      if (pick) {
+        await handleOptionSelect(pick); // reuse your existing function
+        setLoading(false);
+        return;
+      }
 
-  addBotMessage('Please pick 1, 2, 3, or 4 to continue.');
-  Speech.speak('I can help with the following options - press 1, 2, 3, or 4 to continue.');
-  setLoading(false);
-  return;
-}
-
+      addBotMessage('Please pick 1, 2, 3, or 4 to continue.');
+      Speech.speak('I can help with the following options - press 1, 2, 3, or 4 to continue.');
+      setLoading(false);
+      return;
+    }
 
     try {
       // Cancel flow (last 3)
@@ -403,8 +410,8 @@ if (!mode) {
           const barbers = await getBarbersByZipcode(profile?.zipcode || '');
           setBarbersCache(barbers);
           if (!barbers.length) {
-            addBotMessage("I couldn’t find barbers near you yet.");
-            Speech.speak("I couldn’t find barbers near you yet.");
+            addBotMessage("I couldn't find barbers near you yet.");
+            Speech.speak("I couldn't find barbers near you yet.");
             setLoading(false); return;
           }
           addBotMessage(`Barbers near ${profile?.zipcode}:\n${listBarbers(barbers)}\n\nReply with a number.`);
@@ -507,15 +514,18 @@ if (!mode) {
           // reset booking state
           setMode(null);
           setNewStep('idle');
-          setBarbersCache([]); setServicesCache([]);
-          setSelectedBarber(null); setSelectedService(null);
-            setSelectedPrice(null); setSelectedTime(null);
-          setLoading(false); return;
+          setBarbersCache([]);
+          setServicesCache([]);
+          setSelectedBarber(null);
+          setSelectedService(null);
+          setSelectedPrice(null);
+          setSelectedTime(null);
+          setLoading(false);
+          return;
         }
       }
 
-      // Other modes (repeat/pay) or AI logic (optional) can go here.
-
+      // Other modes (pay) or AI logic (optional) can go here.
     } catch (e) {
       console.error('[handleSendMessage]', e);
       addBotMessage('Unexpected error.');
@@ -525,18 +535,20 @@ if (!mode) {
     }
   };
 
-useEffect(() => {
-  if (scrollRef.current) {
-    try { scrollRef.current.scrollToEnd({ animated:true }); } catch {}
-  }
-}, [messages]);
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollRef.current) {
+      try { scrollRef.current.scrollToEnd({ animated: true }); } catch {}
+    }
+  }, [messages]);
 
+  // Reset and initialize on focus
   useFocusEffect(
     useCallback(() => {
-      // Reset all conversational state when screen gains focus
       resetAssistant();
-      hasShownMenu.current = false; // allow menu to show again
-      // Defer one tick so reset finishes before adding menu
+      hasShownMenu.current = false;
+      
+      // Show menu after reset
       setTimeout(() => {
         const menuText =
           "What would you like to do?\n" +
@@ -549,75 +561,92 @@ useEffect(() => {
         try { Speech.speak("Choose an option: 1 new, 2 repeat, 3 cancel, or 4 pay."); } catch {}
         hasShownMenu.current = true;
       }, 0);
+      
       return () => {
-        // (optional) cleanup if needed
+        // Cleanup if needed
       };
     }, [resetAssistant])
   );
 
   return (
-    <SafeAreaView style={{ flex:1, backgroundColor:'#fff' }}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.modeRow}>
-        <TouchableOpacity onPress={()=>handleOptionSelect('new')} style={[styles.modeBtn, mode==='new' && styles.modeBtnActive]}>
+        <TouchableOpacity 
+          onPress={() => handleOptionSelect('new')} 
+          style={[styles.modeBtn, mode === 'new' && styles.modeBtnActive]}
+        >
           <Text style={styles.modeBtnText}>New Appt</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={()=>handleOptionSelect('repeat')} style={[styles.modeBtn, mode==='repeat' && styles.modeBtnActive]}>
-          <Text style={styles.modeBtnText}>Previous Appt</Text>
+        <TouchableOpacity 
+          onPress={() => handleOptionSelect('repeat')} 
+          style={[styles.modeBtn, mode === 'repeat' && styles.modeBtnActive]}
+        >
+          <Text style={styles.modeBtnText}>Previous</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={()=>handleOptionSelect('cancel')} style={[styles.modeBtn, mode==='cancel' && styles.modeBtnActive]}>
-          <Text style={styles.modeBtnText}>Cancel Appt</Text>
+        <TouchableOpacity 
+          onPress={() => handleOptionSelect('cancel')} 
+          style={[styles.modeBtn, mode === 'cancel' && styles.modeBtnActive]}
+        >
+          <Text style={styles.modeBtnText}>Cancel</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={()=>handleOptionSelect('pay')} style={[styles.modeBtn, mode==='pay' && styles.modeBtnActive]}>
+        <TouchableOpacity 
+          onPress={() => handleOptionSelect('pay')} 
+          style={[styles.modeBtn, mode === 'pay' && styles.modeBtnActive]}
+        >
           <Text style={styles.modeBtnText}>Pay Bill</Text>
         </TouchableOpacity>
       </View>
+
       <FlatList
         ref={scrollRef}
         data={messages}
-        keyExtractor={i=>i.id}
-        renderItem={({item})=>(
-          <View style={{ marginVertical:6 }}>
-            <Text style={{ fontWeight:item.sender==='bot'?'600':'400' }}>
-              {item.sender==='bot' ? `Assistant: ${item.text}` : `You: ${item.text}`}
-            </Text>
+        keyExtractor={i => i.id}
+        renderItem={({ item }) => (
+          <View style={[
+            styles.messageRow,
+            item.sender === 'user' ? styles.messageRowUser : styles.messageRowBot
+          ]}>
+            <View style={[
+              styles.bubble,
+              item.sender === 'user' ? styles.bubbleUser : styles.bubbleBot
+            ]}>
+              <Text style={[
+                styles.messageText,
+                item.sender === 'user' ? styles.messageTextUser : styles.messageTextBot
+              ]}>
+                {item.text}
+              </Text>
+            </View>
           </View>
         )}
-        contentContainerStyle={{ padding:16, paddingBottom:120 }}
+        contentContainerStyle={styles.messageList}
       />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flexDirection: 'row', alignItems: 'center', marginTop: 16 }}
+        keyboardVerticalOffset={10}
+        style={styles.inputContainer}
       >
         <TextInput
           value={input}
           onChangeText={setInput}
           placeholder="Type your message..."
-          style={{
-            flex: 1,
-            borderWidth: 1,
-            borderColor: '#ccc',
-            borderRadius: 20,
-            padding: 10,
-            marginRight: 8,
-          }}
+          placeholderTextColor="#6B7280"
+          multiline
+          style={styles.input}
         />
-        <TouchableOpacity
-          onPress={handleSendMessage}
-          style={{
-            backgroundColor: '#007bff',
-            borderRadius: 20,
-            paddingVertical: 10,
-            paddingHorizontal: 16,
-          }}
+        <TouchableOpacity 
+          onPress={handleSendMessage} 
+          disabled={loading || !input.trim()}
+          style={[styles.sendButton, (!input.trim() || loading) && styles.sendButtonDisabled]}
         >
-          <Text style={{ color: '#fff', fontWeight: 'bold' }}>Send</Text>
+          <Ionicons name="send" size={24} color="#FFFFFF" />
         </TouchableOpacity>
       </KeyboardAvoidingView>
 
       {loading && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color="#007bff" />
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#2563EB" />
         </View>
       )}
     </SafeAreaView>
@@ -625,57 +654,140 @@ useEffect(() => {
 }
 
 const styles = StyleSheet.create({
-  modeBtn:{ backgroundColor:'#007bff', paddingVertical:8, paddingHorizontal:14, borderRadius:16, marginRight:8 },
-  modeBtnText:{ color:'#fff', fontWeight:'600' },
-  modeRow: {
-    padding: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#f8f8f8',
-    borderBottomWidth: 1,
-    borderBottomColor: '#ddd',
-  },
-  modeBtnActive: {
-    backgroundColor: '#005fcc',
-  },
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F8FAFC',
   },
-  messageContainer: {
-    marginVertical: 8,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
   },
-  botMessage: {
-    fontWeight: 'bold',
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#64748B',
   },
-  userMessage: {
-    textAlign: 'right',
+  
+  // Mode selector buttons
+  modeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
   },
+  modeBtn: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  modeBtnActive: {
+    backgroundColor: '#1D4ED8',
+  },
+  modeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  
+  // Message list
+  messageList: {
+    flexGrow: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+  },
+  messageRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  messageRowUser: {
+    justifyContent: 'flex-end',
+  },
+  messageRowBot: {
+    justifyContent: 'flex-start',
+  },
+  bubble: {
+    maxWidth: '80%',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  bubbleUser: {
+    backgroundColor: '#2563EB',
+  },
+  bubbleBot: {
+    backgroundColor: '#FFFFFF',
+  },
+  messageText: {
+    fontSize: 18,
+    lineHeight: 24,
+  },
+  messageTextUser: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  messageTextBot: {
+    color: '#1E293B',
+    fontWeight: '500',
+  },
+  
+  // Input area
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#ccc',
+    borderTopColor: '#E2E8F0',
+    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
   },
-  textInput: {
+  input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 20,
-    padding: 10,
-    marginRight: 8,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#0F172A',
+    maxHeight: 120,
   },
   sendButton: {
-    backgroundColor: '#007bff',
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    backgroundColor: '#2563EB',
+    borderRadius: 24,
+    width: 48,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
   },
-  sendButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+  sendButtonDisabled: {
+    backgroundColor: '#94A3B8',
+  },
+  
+  // Loading overlay
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
-
 

@@ -18,7 +18,7 @@ import {
   scheduleAppointmentReminder,
   requestPermissions
 } from '@/services/notifications';
-import * as Speech from 'expo-speech';
+import * as Speech from '@/stubs/speech'; // was 'expo-speech', now stubbed
 import Waveform from '@/components/Waveform';
 
 // Google Cloud STT setup placeholder

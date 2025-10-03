@@ -49,9 +49,9 @@ const ViewBarberProfile = () => {
         <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => router.push('/(app)/(barber)/network')}
           >
-            <Ionicons name="arrow-back" size={24} color="#007BFF" />
+            <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Barber Profile</Text>
           <View style={styles.headerSpacer} />
@@ -70,9 +70,9 @@ const ViewBarberProfile = () => {
         <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => router.push('/(app)/(barber)/network')}
           >
-            <Ionicons name="arrow-back" size={24} color="#007BFF" />
+            <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Barber Profile</Text>
           <View style={styles.headerSpacer} />
@@ -113,9 +113,9 @@ const ViewBarberProfile = () => {
         <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
           <TouchableOpacity 
             style={styles.backButton}
-            onPress={() => router.back()}
+            onPress={() => router.push('/(app)/(barber)/network')}
           >
-            <Ionicons name="arrow-back" size={24} color="#007BFF" />
+            <Ionicons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Barber Profile</Text>
           <View style={styles.headerSpacer} />
@@ -134,9 +134,9 @@ const ViewBarberProfile = () => {
       <View style={[styles.header, { paddingTop: insets.top > 0 ? 0 : 20 }]}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.push('/(app)/(barber)/network')}
         >
-          <Ionicons name="arrow-back" size={24} color="#007BFF" />
+          <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Barber Profile</Text>
         <View style={styles.headerSpacer} />

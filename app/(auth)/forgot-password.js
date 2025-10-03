@@ -1,136 +1,123 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { resetPassword } from '@/services/authService'; // or wherever it's defined
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableWithoutFeedback,
+  Keyboard,
+} from 'react-native';
 import { useRouter } from 'expo-router';
+import { sendPasswordResetEmail } from 'firebase/auth';
+import { auth } from '@/services/firebase';
 
-const ForgotPasswordScreen = () => {
+export default function ForgotPasswordScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState(''); // This state seems unused, can be removed
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
+  const [sent, setSent] = useState(false);
 
-  const handleResetPassword = async () => {
+  const onSendReset = async () => {
     try {
-      if (!email) {
-        setError('Please enter your email address');
+      setError('');
+      if (!email?.trim()) {
+        setError('Enter your email');
         return;
       }
       setLoading(true);
-      setError('');
-      setSuccess(false);
-      await resetPassword(email);
-      setSuccess(true);
-    } catch (error) {
-      console.error('Password reset error:', error);
-      setError(error.message);
+      await sendPasswordResetEmail(auth, email.trim());
+      setSent(true);
+      Alert.alert('Email sent', 'Check your inbox for a reset link.');
+    } catch (e) {
+      console.error('Reset error:', e);
+      setError(e?.message || 'Failed to send reset email');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Reset Password</Text>
-      
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {success ? (
-        <Text style={styles.successText}>
-          Password reset email sent! Check your inbox for further instructions.
-        </Text>
-      ) : null}
-      
-      <View style={styles.inputContainer}>
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your email"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-      </View>
-      
-      <TouchableOpacity 
-        style={styles.button} 
-        onPress={handleResetPassword}
-        disabled={loading}
-      >
-        <Text style={styles.buttonText}>
-          {loading ? 'Sending...' : 'Reset Password'}
-        </Text>
-      </TouchableOpacity>
-      
-      <View style={styles.footer}>
-        <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
-          <Text style={styles.link}>Back to Login</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.container}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.formContainer}>
+            <Text style={styles.title}>Reset Password</Text>
+
+            {!!error && <Text style={styles.errorText}>{error}</Text>}
+            {sent && <Text style={styles.infoText}>If an account exists, a reset link was sent.</Text>}
+
+            <View style={styles.field}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="you@example.com"
+                placeholderTextColor="#6B7280"
+                keyboardType="email-address"
+                textContentType="emailAddress"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={email}
+                onChangeText={setEmail}
+                returnKeyType="send"
+                onSubmitEditing={onSendReset}
+              />
+            </View>
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={onSendReset}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>{loading ? 'Sending...' : 'Send Reset Link'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => router.back()} style={styles.secondary}>
+              <Text style={styles.secondaryText}>Back to Login</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableWithoutFeedback>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    padding: 20,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  inputContainer: {
-    marginBottom: 15,
-  },
-  label: {
-    marginBottom: 5,
-    fontWeight: '500',
-  },
+  container: { flexGrow: 1, justifyContent: 'center', padding: 20, backgroundColor: '#fff' },
+  formContainer: { width: '100%' },
+  title: { fontSize: 28, fontWeight: '800', marginBottom: 24, textAlign: 'center', color: '#111827' },
+  field: { marginBottom: 18 },
+  label: { fontSize: 18, fontWeight: '700', marginBottom: 8, color: '#111827' },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
+    height: 56,
+    borderWidth: 2,
+    borderColor: '#1F2937',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 18,
+    fontWeight: '700', // make input text bold
+    color: '#111827',
+    backgroundColor: '#FFFFFF',
   },
   button: {
-    backgroundColor: '#2196F3',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  footer: {
-    flexDirection: 'row',
+    backgroundColor: '#007bff',
+    height: 56,
+    borderRadius: 12,
     justifyContent: 'center',
-    marginTop: 20,
+    alignItems: 'center',
+    marginTop: 12,
   },
-  link: {
-    color: '#2196F3',
-    fontWeight: 'bold',
-  },
-  errorText: {
-    color: 'red',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  successText: {
-    color: 'green',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
+  buttonDisabled: { backgroundColor: '#cccccc' },
+  buttonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+  secondary: { alignItems: 'center', marginTop: 16, paddingVertical: 8 },
+  secondaryText: { color: '#007bff', fontSize: 18, fontWeight: '700' },
+  errorText: { color: 'red', textAlign: 'center', marginBottom: 12, fontSize: 16, fontWeight: '600' },
+  infoText: { color: '#065f46', textAlign: 'center', marginBottom: 12, fontSize: 16, fontWeight: '600' },
 });
-
-export default ForgotPasswordScreen;
 

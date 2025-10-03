@@ -1,40 +1,39 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
-import { getUserProfile, updateUserProfile, auth } from '@/services/firebase';
+import { getUserProfile, auth, db } from '@/services/firebase';
+import { doc, updateDoc, deleteField } from 'firebase/firestore';
+import { Ionicons } from '@expo/vector-icons';
+import { Calendar } from 'react-native-calendars';
 
-const HORIZON_DAYS = 60;            // allow ~2 months
 const DEFAULT_SLOTS = [
   '09:00','09:30','10:00','10:30','11:00','11:30',
-  '12:00','12:30','13:00', '13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00','18:30','19:00','19:30','20:00'
+  '12:00','12:30','13:00','13:30','14:00','14:30',
+  '15:00','15:30','16:00','16:30','17:00','17:30',
+  '18:00','18:30','19:00','19:30','20:00'
 ];
 
-function buildNextDays(days = HORIZON_DAYS) {
-  const out = [];
-  const now = new Date();
-  for (let i = 0; i < days; i++) {
-    const d = new Date(now);
-    d.setDate(now.getDate() + i);
-    out.push(d);
-  }
-  return out;
-}
+// Format date as YYYY-MM-DD for the calendar
+const formatDate = (date) => {
+  const d = new Date(date);
+  let month = '' + (d.getMonth() + 1);
+  let day = '' + d.getDate();
+  const year = d.getFullYear();
 
-function groupByMonth(days) {
-  return days.reduce((acc, d) => {
-    const key = d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-    (acc[key] = acc[key] || []).push(d);
-    return acc;
-  }, {});
-}
+  if (month.length < 2) month = '0' + month;
+  if (day.length < 2) day = '0' + day;
+
+  return [year, month, day].join('-');
+};
 
 const BarberAvailabilityScreen = () => {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(buildNextDays()[0]);
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [saving, setSaving] = useState(false);
+  const [markedDates, setMarkedDates] = useState({});
+  const [initialAvailability, setInitialAvailability] = useState({}); // add
 
+  // Load user profile
   const load = useCallback(async () => {
     try {
       const user = auth.currentUser;
@@ -44,6 +43,10 @@ const BarberAvailabilityScreen = () => {
       }
       const data = await getUserProfile(user.uid);
       setProfile(data || {});
+      setInitialAvailability(data?.availability || {}); // add
+
+      // Update calendar marked dates based on availability
+      updateMarkedDates(data?.availability || {});
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -53,28 +56,84 @@ const BarberAvailabilityScreen = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const dateKey = d => d.toISOString().split('T')[0];
-  const availability = profile?.availability || {};
-  const selectedKey = dateKey(selectedDate);
-  const selectedSlots = availability[selectedKey] || [];
+  // Update marked dates for calendar display
+  const updateMarkedDates = useCallback((availability) => {
+    const marked = {};
+    
+    // Mark dates with availability
+    Object.entries(availability || {}).forEach(([dateStr, slots]) => {
+      if (slots && slots.length > 0) {
+        marked[dateStr] = {
+          marked: true,
+          dotColor: '#2563eb',
+          selectedColor: '#2563eb'
+        };
+      }
+    });
+    
+    // Add selected date
+    const selectedDateStr = formatDate(selectedDate);
+    marked[selectedDateStr] = {
+      ...marked[selectedDateStr],
+      selected: true,
+      selectedColor: profile?.availability?.[selectedDateStr]?.length > 0 ? '#2563eb' : '#666'
+    };
+    
+    setMarkedDates(marked);
+  }, [selectedDate, profile]);
 
+  useEffect(() => {
+    if (profile?.availability) {
+      updateMarkedDates(profile.availability);
+    }
+  }, [profile?.availability, selectedDate, updateMarkedDates]);
+
+  const dateKey = (d) => formatDate(d);
+  const selectedKey = dateKey(selectedDate);
+  const selectedSlots = profile?.availability?.[selectedKey] || [];
+
+  // toggleSlot: remove the date key if no times remain
   function toggleSlot(slot) {
     const next = new Set(selectedSlots);
     next.has(slot) ? next.delete(slot) : next.add(slot);
-    const updated = {
-      ...availability,
-      [selectedKey]: Array.from(next).sort()
-    };
+
+    const updated = { ...(profile?.availability || {}) };
+    if (next.size === 0) {
+      delete updated[selectedKey]; // treat as day off (no key in DB)
+    } else {
+      updated[selectedKey] = Array.from(next).sort();
+    }
     setProfile(p => ({ ...(p || {}), availability: updated }));
   }
 
+  // save: upsert non-empty dates, delete empty/missing dates in Firestore
   async function save() {
     try {
       setSaving(true);
       const user = auth.currentUser;
       if (!user) return;
-      await updateUserProfile(user.uid, { availability: profile.availability });
-      Alert.alert('Saved');
+
+      const userRef = doc(db, 'users', user.uid);
+      const current = profile?.availability || {};
+      const allKeys = new Set([
+        ...Object.keys(initialAvailability || {}),
+        ...Object.keys(current || {}),
+      ]);
+
+      // Persist each date atomically (small per-field updates)
+      for (const k of allKeys) {
+        const times = current[k];
+        if (!times || times.length === 0) {
+          await updateDoc(userRef, { [`availability.${k}`]: deleteField() });
+        } else {
+          // ensure unique + sorted
+          const clean = Array.from(new Set(times)).sort();
+          await updateDoc(userRef, { [`availability.${k}`]: clean });
+        }
+      }
+
+      setInitialAvailability(current); // baseline after save
+      Alert.alert('Success', 'Your availability has been saved.');
     } catch (e) {
       Alert.alert('Error', e.message);
     } finally {
@@ -82,103 +141,118 @@ const BarberAvailabilityScreen = () => {
     }
   }
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-        <Text style={styles.loading}>Loading availability...</Text>
-      </View>
-    );
-  }
-
-  const allDays = buildNextDays();
-  const months = groupByMonth(allDays);
-
-  // Add helper to copy selected week's pattern forward:
-  function copyWeekForward() {
-    const availability = profile.availability || {};
-    const selKey = dateKey(selectedDate);
+  // Rename for clarity (was: copyWeekForward)
+  function copyWeekToYear() {
+    const availability = profile?.availability || {};
     const selDate = new Date(selectedDate);
+
+    // Start of the selected week (Sunday)
     const startOfWeek = new Date(selDate);
-    startOfWeek.setDate(selDate.getDate() - selDate.getDay()); // Sunday
-    // Collect this week’s pattern map: dayOffset -> slots
+    startOfWeek.setHours(0, 0, 0, 0);
+    startOfWeek.setDate(selDate.getDate() - selDate.getDay());
+
+    // Collect this week's pattern
     const weekPattern = {};
     for (let i = 0; i < 7; i++) {
       const d = new Date(startOfWeek);
       d.setDate(startOfWeek.getDate() + i);
-      const k = dateKey(d);
-      if (availability[k]?.length) weekPattern[i] = [...availability[k]];
+      const k = formatDate(d);
+      if (availability[k]?.length) {
+        weekPattern[i] = [...availability[k]];
+      }
     }
+
     if (!Object.keys(weekPattern).length) {
       Alert.alert('Nothing to copy', 'Set at least one day in this week first.');
       return;
     }
-    // Apply pattern to all future weeks (within horizon)
+
     const updated = { ...availability };
-    for (const day of allDays) {
-      if (day <= startOfWeek) continue;
-      const offset = day.getDay(); // same weekday index
-      if (weekPattern[offset]) {
-        updated[dateKey(day)] = [...weekPattern[offset]];
+    const today = new Date(); today.setHours(0,0,0,0);
+    const endOfYear = new Date(selDate.getFullYear(), 11, 31);
+
+    // Apply the pattern to every remaining week in this year
+    for (let base = new Date(startOfWeek); base <= endOfYear; base.setDate(base.getDate() + 7)) {
+      for (let day = 0; day < 7; day++) {
+        const d = new Date(base);
+        d.setDate(base.getDate() + day);
+        if (d < today || d.getFullYear() !== selDate.getFullYear()) continue;
+
+        const k = formatDate(d);
+        if (weekPattern[day]) {
+          updated[k] = [...weekPattern[day]];
+        }
       }
     }
+
     setProfile(p => ({ ...p, availability: updated }));
-    Alert.alert('Week pattern copied forward');
+    Alert.alert('Schedule Copied', 'This week’s schedule has been copied to all remaining weeks this year.');
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text style={styles.loading}>Loading your availability...</Text>
+      </View>
+    );
   }
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Availability</Text>
-
-      <View style={styles.actionsRow}>
-        <TouchableOpacity style={styles.smallBtn} onPress={copyWeekForward}>
-          <Text style={styles.smallBtnText}>Copy Week Forward</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.smallBtnDanger} onPress={() => {
-          const k = dateKey(selectedDate);
-          const updated = { ...(profile.availability||{}) };
-          delete updated[k];
-          setProfile(p => ({ ...p, availability: updated }));
-        }}>
-          <Text style={styles.smallBtnText}>Clear Day</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.smallBtnSave} disabled={saving} onPress={save}>
-          <Text style={styles.smallBtnText}>{saving ? 'Saving...' : 'Save'}</Text>
-        </TouchableOpacity>
+      <View style={styles.header}>
+        <Text style={styles.title}>Set Your Working Hours</Text>
+        <Text style={styles.subtitle}>
+          Select dates on the calendar, then mark which times you're available to work.
+          Days with blue dots have time slots available.
+        </Text>
       </View>
 
-      <ScrollView style={{ maxHeight: 260, marginBottom: 16 }}>
-        {Object.entries(months).map(([label, daysInMonth]) => (
-          <View key={label} style={{ marginBottom: 12 }}>
-            <Text style={styles.monthLabel}>{label}</Text>
-            <View style={styles.monthDaysWrap}>
-              {daysInMonth.map(d => {
-                const k = dateKey(d);
-                const isSelected = k === selectedKey;
-                  const has = (profile.availability?.[k] || []).length > 0;
-                return (
-                  <TouchableOpacity
-                    key={k}
-                    style={[
-                      styles.dayBox,
-                      isSelected && styles.dayBoxSelected,
-                      !isSelected && has && styles.dayBoxHas
-                    ]}
-                    onPress={() => setSelectedDate(d)}
-                  >
-                    <Text style={[
-                      styles.dayNum,
-                      isSelected && styles.dayNumSelected
-                    ]}>{d.getDate()}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-        ))}
-      </ScrollView>
+      {/* Calendar view */}
+      <Calendar
+        current={formatDate(selectedDate)}
+        minDate={formatDate(new Date())}
+        onDayPress={(day) => {
+          // Fix timezone issue by using the date parts directly
+          const selected = new Date(day.year, day.month - 1, day.day);
+          setSelectedDate(selected);
+        }}
+        markedDates={markedDates}
+        theme={{
+          backgroundColor: '#ffffff',
+          calendarBackground: '#ffffff',
+          textSectionTitleColor: '#222222',
+          selectedDayBackgroundColor: '#2563eb',
+          selectedDayTextColor: '#ffffff',
+          todayTextColor: '#2563eb',
+          dayTextColor: '#222222',
+          textDisabledColor: '#d9e1e8',
+          dotColor: '#2563eb',
+          selectedDotColor: '#ffffff',
+          arrowColor: '#2563eb',
+          monthTextColor: '#222222',
+          indicatorColor: '#2563eb',
+          textDayFontWeight: '400',
+          textMonthFontWeight: '600',
+          textDayHeaderFontWeight: '500'
+        }}
+        style={styles.calendar}
+      />
 
-      <Text style={styles.section}>Time Slots</Text>
+      <View style={styles.selectedDateContainer}>
+        <Text style={styles.selectedDateText}>
+          <Ionicons name="calendar" size={18} /> {selectedDate.toLocaleDateString(undefined, {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric',
+            year: 'numeric'
+          })}
+        </Text>
+      </View>
+
+      <Text style={styles.section}>Available Time Slots</Text>
+      <Text style={styles.helpText}>Tap time slots to mark them as available.</Text>
+      
       <View style={styles.slotsWrap}>
         {DEFAULT_SLOTS.map(slot => {
           const active = selectedSlots.includes(slot);
@@ -193,33 +267,88 @@ const BarberAvailabilityScreen = () => {
           );
         })}
       </View>
+
+      <View style={styles.actionsContainer}>
+        <View className="actionsRow" style={styles.actionsRow}>
+          <TouchableOpacity style={[styles.actionBtn, { flex: 1 }]} onPress={copyWeekToYear}>
+            <Ionicons name="copy" size={18} color="white" />
+            <Text style={styles.actionBtnText}>Copy Week → Year</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.saveBtn, saving && styles.saveBtnDisabled]} 
+          disabled={saving} 
+          onPress={save}
+        >
+          <Ionicons name="save" size={20} color="white" />
+          <Text style={styles.saveText}>{saving ? 'Saving...' : 'Save Availability'}</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { padding: 16 },
-  title: { fontSize: 22, fontWeight: '600', marginBottom: 16 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
-  loading: { marginTop: 12, fontSize: 16 },
-  actionsRow: { flexDirection: 'row', marginBottom: 12, flexWrap: 'wrap' },
-  smallBtn: { backgroundColor: '#444', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginRight: 8, marginBottom: 8 },
-  smallBtnDanger: { backgroundColor: '#b3261e', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginRight: 8, marginBottom: 8 },
-  smallBtnSave: { backgroundColor: '#2563eb', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, marginRight: 8, marginBottom: 8 },
-  smallBtnText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  monthLabel: { fontSize: 14, fontWeight: '600', marginBottom: 6 },
-  monthDaysWrap: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayBox: {
-    width: 38, height: 38, borderRadius: 8,
-    backgroundColor: '#eee', alignItems: 'center',
-    justifyContent: 'center', marginRight: 6, marginBottom: 6
+  header: {
+    marginBottom: 16,
+    backgroundColor: '#f8f9fa',
+    padding: 16,
+    borderRadius: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2563eb',
   },
-  dayBoxSelected: { backgroundColor: '#222' },
-  dayBoxHas: { backgroundColor: '#d0e8ff' },
-  dayNum: { fontSize: 14, fontWeight: '500', color: '#333' },
-  dayNumSelected: { color: '#fff' },
-  section: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-  slotsWrap: { flexDirection: 'row', flexWrap: 'wrap' },
+  title: { 
+    fontSize: 24, 
+    fontWeight: '600', 
+    marginBottom: 8,
+    color: '#111'
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#555',
+    lineHeight: 20
+  },
+  calendar: {
+    marginBottom: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+    overflow: 'hidden'
+  },
+  selectedDateContainer: {
+    backgroundColor: '#edf2ff',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  selectedDateText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#2563eb',
+  },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
+  loading: { marginTop: 12, fontSize: 16, color: '#555' },
+  section: { 
+    fontSize: 18, 
+    fontWeight: '600', 
+    marginBottom: 4,
+    color: '#222'
+  },
+  helpText: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 12,
+    fontStyle: 'italic'
+  },
+  slotsWrap: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap',
+    backgroundColor: '#f8f9fa',
+    padding: 8,
+    borderRadius: 8,
+  },
   slot: {
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -230,15 +359,45 @@ const styles = StyleSheet.create({
   slotActive: { backgroundColor: '#2563eb' },
   slotText: { fontSize: 14, color: '#333' },
   slotTextActive: { color: '#fff', fontWeight: '500' },
-  saveBtn: {
+  actionsContainer: {
     marginTop: 24,
+    marginBottom: 40,
+  },
+  actionsRow: { 
+    flexDirection: 'row', 
+    marginBottom: 16, 
+    justifyContent: 'space-between'
+  },
+  actionBtn: { 
+    backgroundColor: '#4b5563', 
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 0.48,
+  },
+  actionBtnText: { 
+    color: '#fff', 
+    fontSize: 14, 
+    fontWeight: '500',
+    marginLeft: 6
+  },
+  saveBtn: {
     backgroundColor: '#2563eb',
     borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center'
+    paddingVertical: 16,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center'
   },
   saveBtnDisabled: { opacity: 0.6 },
-  saveText: { color: '#fff', fontSize: 16, fontWeight: '600' }
+  saveText: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: '600',
+    marginLeft: 8
+  }
 });
 
 export default BarberAvailabilityScreen;

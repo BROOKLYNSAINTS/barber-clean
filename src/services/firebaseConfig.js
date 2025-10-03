@@ -1,19 +1,23 @@
 // src/services/firebaseConfig.js
-// This file stores Firebase configuration for the app
-import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 
-// EMULATOR MODE: When working with emulators, use localhost for authDomain
-// This forces the use of the development database with the emulator
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyD3FFprDwIZwECR5TkYCeOkiCUNGLp6qQM",
-  // Use localhost for emulator
-  authDomain: __DEV__ ? "localhost" : "barber-38b88.firebaseapp.com",
-  projectId: "barber-38b88",  // Always use development project with emulators
-  storageBucket: "barber-38b88.appspot.com",
-  messagingSenderId: "910680290414",
-  appId: "1:910680290414:web:606ee1c0e84c32e6bfcc8c",
-  measurementId: "G-B6HMP9YK92"
+// Get Firebase configuration from environment variables via app.config.js
+const getFirebaseConfig = () => {
+  const extra = Constants?.expoConfig?.extra || {};
+  const isTestFlight = extra.isTestFlight === true;
+  const buildType = extra.buildType || '';
+  
+  console.log(`📱 Build type: ${buildType}, TestFlight: ${isTestFlight ? 'Yes' : 'No'}`);
+  
+  // Always use dev config for TestFlight builds
+  if (isTestFlight || buildType === 'preview' || buildType === 'development') {
+    console.log('Using development Firebase config from environment');
+    return extra.firebaseDevConfig || {};
+  } else {
+    console.log('Using production Firebase config from environment');
+    return extra.firebaseProdConfig || {};
+  }
 };
 
 // Validate the Firebase config before exporting it
@@ -34,13 +38,10 @@ const validateFirebaseConfig = (config) => {
   // Log platform info for debugging
   console.log(`📱 Platform: ${Platform.OS}, Version: ${Platform.Version}`);
   console.log(`🏠 Environment: ${__DEV__ ? 'Development' : 'Production'}`);
+  console.log(`🔑 API Key length: ${config.apiKey?.length || 0}`);
   
   return config;
 };
 
-// Export the validated config
-export const firebaseConfig = validateFirebaseConfig(FIREBASE_CONFIG);
-
-// Important: The above values should match your Firebase project
-// These are public keys and meant to be included in client code
-// DO NOT use environment variables for these in production builds
+// Export the validated config from environment variables
+export const firebaseConfig = validateFirebaseConfig(getFirebaseConfig());

@@ -1,331 +1,229 @@
 // app/(app)/(customer)/index.js
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   StyleSheet,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
-  TouchableWithoutFeedback,
-  Keyboard,
-  ActivityIndicator
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, getCustomerAppointments } from '@/services/firebase';
+import { useRouter } from 'expo-router';
+import { auth, getRecentAppointmentsForUser } from '@/services/firebase';
 
-export default function IndexScreen() {
+export default function CustomerHomeScreen() {
   const router = useRouter();
-  const [zipcode, setZipcode] = useState('');
-  const [previousBarber, setPreviousBarber] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const user = auth.currentUser;
+  const [zip, setZip] = useState('');
+  const [loadingAppt, setLoadingAppt] = useState(true);
+  const [nextAppt, setNextAppt] = useState(null);
+
+  const firstName = useMemo(() => {
+    const n = user?.displayName || user?.email || 'Customer';
+    return String(n).split(/[ @]/)[0];
+  }, [user]);
 
   useEffect(() => {
-    loadPreviousAppointment();
-  }, []);
-
-  const loadPreviousAppointment = async () => {
-    try {
-      const user = auth.currentUser;
-      if (user) {
-        const appointments = await getCustomerAppointments(user.uid);
-        
-        console.log('📋 All appointments:', appointments);
-        
-        // Filter out cancelled appointments and get the most recent one
-        const activeAppointments = appointments.filter(apt => apt.status !== 'cancelled');
-        
-        console.log('📋 Active appointments:', activeAppointments);
-        
-        if (activeAppointments.length > 0) {
-          // Sort by date and get the most recent
-          activeAppointments.sort((a, b) => {
-            const dateA = new Date(`${a.date}T${a.time}`);
-            const dateB = new Date(`${b.date}T${b.time}`);
-            return dateB - dateA;
-          });
-          
-          const lastAppointment = activeAppointments[0];
-          console.log('📋 Last appointment data:', lastAppointment);
-          
-          // Check what data we actually have
-          const hasRequiredData = lastAppointment.barberId && 
-                                 lastAppointment.barberName && 
-                                 lastAppointment.serviceName;
-          
-          if (hasRequiredData) {
-            setPreviousBarber({
-              barberId: lastAppointment.barberId,
-              barberName: lastAppointment.barberName,
-              serviceName: lastAppointment.serviceName,
-              servicePrice: lastAppointment.servicePrice || 0,
-              serviceDuration: lastAppointment.serviceDuration || 30,
-              serviceId: lastAppointment.serviceId || 'default'
-            });
-            console.log('✅ Previous barber data set successfully');
-          } else {
-            console.log('❌ Missing required appointment data:', {
-              barberId: lastAppointment.barberId,
-              barberName: lastAppointment.barberName,
-              serviceName: lastAppointment.serviceName
-            });
-          }
-        } else {
-          console.log('📋 No active appointments found');
-        }
+    let mounted = true;
+    (async () => {
+      try {
+        if (!user?.uid) return;
+        const appts = await getRecentAppointmentsForUser(user.uid, 1);
+        if (mounted) setNextAppt(appts[0] || null);
+      } finally {
+        if (mounted) setLoadingAppt(false);
       }
-    } catch (error) {
-      console.error('Error loading previous appointment:', error);
-    } finally {
-      setLoading(false);
-    }
+    })();
+    return () => { mounted = false; };
+  }, [user?.uid]);
+
+  const onSearch = () => {
+    if (!zip.trim()) return;
+    router.push({ pathname: '/(app)/(customer)/barber-selection', params: { zipcode: zip.trim() } });
   };
 
-  const handleBookWithPrevious = () => {
-    if (previousBarber) {
-      console.log('🚀 Navigating to booking with previous barber:', previousBarber);
-      
-      // Navigate to barber selection if we don't have service details
-      if (!previousBarber.serviceId || previousBarber.serviceId === 'default') {
-        console.log('📍 Going to barber services (missing service details)');
-        
-        // Create barber object in the format expected by barber-services
-        const barberObj = {
-          id: previousBarber.barberId,
-          name: previousBarber.barberName,
-          // Add any other barber fields that might be needed
-        };
-        
-        router.push({
-          pathname: '/(app)/(customer)/barber-services',
-          params: {
-            barber: JSON.stringify(barberObj),
-            fromPrevious: 'true'
-          },
-        });
-      } else {
-        console.log('📍 Going directly to appointment booking (complete data)');
-        // Navigate directly to appointment booking with pre-filled data
-        
-        // Create barber and service objects in the format expected by appointment booking
-        const barberObj = {
-          id: previousBarber.barberId,
-          name: previousBarber.barberName,
-          // Add any other barber fields that might be needed
-        };
-        
-        const serviceObj = {
-          id: previousBarber.serviceId,
-          name: previousBarber.serviceName,
-          price: previousBarber.servicePrice,
-          duration: previousBarber.serviceDuration,
-        };
-        
-        router.push({
-          pathname: '/(app)/(customer)/appointment-booking',
-          params: {
-            barber: JSON.stringify(barberObj),
-            service: JSON.stringify(serviceObj),
-            fromPrevious: 'true'
-          },
-        });
-      }
-    }
-  };
-
-  const handleSubmit = () => {
-    if (zipcode.length === 5) {
-      router.push({
-        pathname: '/(app)/(customer)/barber-selection',
-        params: { zipcode },
-      });
-    } else {
-      alert('Please enter a valid 5-digit ZIP code');
-    }
+  const onBook = () => {
+    router.push('/(app)/(customer)/barber-selection');
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1 }}
-    >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>Welcome to ScheduleSync</Text>
-          <Text style={styles.subtitle}>Book your next appointment</Text>
-          
-          {loading ? (
-            <ActivityIndicator size="large" color="#2196F3" style={styles.loader} />
-          ) : (
-            <>
-              {/* Previous Barber Option */}
-              {previousBarber && (
-                <View style={styles.previousSection}>
-                  <Text style={styles.previousTitle}>Book with Previous Barber</Text>
-                  <TouchableOpacity style={styles.previousButton} onPress={handleBookWithPrevious}>
-                    <View style={styles.previousContent}>
-                      <Ionicons name="person" size={24} color="#2196F3" />
-                      <View style={styles.previousText}>
-                        <Text style={styles.previousBarber}>{previousBarber.barberName}</Text>
-                        {previousBarber.serviceName ? (
-                          <>
-                            <Text style={styles.previousService}>{previousBarber.serviceName}</Text>
-                            {previousBarber.servicePrice > 0 && (
-                              <Text style={styles.previousPrice}>${previousBarber.servicePrice?.toFixed(2)}</Text>
-                            )}
-                          </>
-                        ) : (
-                          <Text style={styles.previousService}>Choose service</Text>
-                        )}
-                      </View>
-                      <Ionicons name="chevron-forward" size={20} color="#2196F3" />
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <View style={styles.divider}>
-                    <View style={styles.dividerLine} />
-                    <Text style={styles.dividerText}>or</Text>
-                    <View style={styles.dividerLine} />
-                  </View>
-                </View>
-              )}
-              
-              {/* New Search Section */}
-              <View style={styles.searchSection}>
-                <Text style={styles.searchTitle}>Find a New Barber</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter ZIP Code"
-                  value={zipcode}
-                  onChangeText={setZipcode}
-                  keyboardType="numeric"
-                  maxLength={5}
-                />
-                <TouchableOpacity style={styles.button} onPress={handleSubmit}>
-                  <Ionicons name="search" size={20} color="#fff" />
-                  <Text style={styles.buttonText}>Search Barbers</Text>
-                </TouchableOpacity>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f7f8fa' }}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>Welcome</Text>
+            <Text style={styles.name}>{firstName}</Text>
+          </View>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{firstName?.[0]?.toUpperCase() || 'C'}</Text>
+          </View>
+        </View>
+
+        {/* Search card */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Find a Barber</Text>
+          <View style={styles.searchRow}>
+            <Ionicons name="search" size={20} color="#6B7280" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Enter ZIP code"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="number-pad"
+              value={zip}
+              onChangeText={setZip}
+              returnKeyType="search"
+              onSubmitEditing={onSearch}
+            />
+            <TouchableOpacity style={styles.searchBtn} onPress={onSearch}>
+              <Text style={styles.searchBtnText}>Search</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Quick action */}
+        <View style={styles.actionsRow}>
+          <TouchableOpacity style={styles.actionBtn} onPress={onBook}>
+            <Ionicons name="calendar" size={22} color="#fff" />
+            <Text style={styles.actionText}>Book Again</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Upcoming appointment */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Your Next Appointment</Text>
+        </View>
+        <View style={styles.card}>
+          {loadingAppt ? (
+            <View style={styles.center}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.muted}>Loading...</Text>
+            </View>
+          ) : nextAppt ? (
+            <View style={styles.apptRow}>
+              <View style={styles.apptIcon}>
+                <Ionicons name="time" size={22} color="#2563EB" />
               </View>
-            </>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.apptTitle} numberOfLines={1}>
+                  {nextAppt.serviceName || 'Service'}
+                </Text>
+                <Text style={styles.apptSub}>
+                  {nextAppt.date} • {nextAppt.time}
+                </Text>
+                {!!nextAppt.barberName && (
+                  <Text style={styles.apptSub}>With {nextAppt.barberName}</Text>
+                )}
+              </View>
+              <View>
+                <Text style={styles.price}>
+                  ${Number(nextAppt.servicePrice ?? nextAppt.price ?? 0).toFixed(2)}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.center}>
+              <Text style={styles.muted}>No upcoming appointments</Text>
+              <TouchableOpacity onPress={onBook} style={styles.linkBtn}>
+                <Text style={styles.linkText}>Book one now</Text>
+              </TouchableOpacity>
+            </View>
           )}
-        </ScrollView>
-      </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexGrow: 1,
+    padding: 16,
+    gap: 16,
+    flexGrow: 1,          // use full height
+    paddingTop: 24,       // more breathing room
+    paddingBottom: 32,    // bottom spacing
+  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  greeting: { color: '#6B7280', fontSize: 14, fontWeight: '600' },
+  name: { color: '#111827', fontSize: 24, fontWeight: '800', marginTop: 2 },
+  avatar: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#2563EB',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarText: { color: '#fff', fontWeight: '800', fontSize: 18 },
+
+  card: {
     backgroundColor: '#fff',
-    paddingHorizontal: 24,
-    paddingVertical: 40,
+    borderRadius: 14,
+    padding: 18,          // bigger card padding
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  cardTitle: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 10 },
+
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 20,       // increased size
+    fontWeight: '800',  // bolder text
+    color: '#111827',
+  },
+  searchBtn: { backgroundColor: '#2563EB', borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12 },
+  searchBtnText: { color: '#fff', fontWeight: '700' },
+
+  actionsRow: { flexDirection: 'row', gap: 12 },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#2563EB',
+    paddingVertical: 14,
+    borderRadius: 12,
     justifyContent: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    marginBottom: 8,
-    textAlign: 'center',
+  actionText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+
+  sectionHeader: { marginTop: 4 },
+  sectionTitle: { fontSize: 16, fontWeight: '800', color: '#111827' },
+
+  apptRow: { flexDirection: 'row', alignItems: 'center', gap: 16 }, // a bit more gap
+  apptIcon: {
+    width: 48, height: 48, borderRadius: 12,   // larger icon block
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center', justifyContent: 'center',
   },
-  subtitle: {
-    fontSize: 18,
-    color: '#666',
-    marginBottom: 32,
-    textAlign: 'center',
+  apptTitle: {
+    fontSize: 20,          // larger service name (e.g., FADE)
+    fontWeight: '800',
+    color: '#111827',
   },
-  loader: {
-    marginVertical: 40,
+  apptSub: {
+    fontSize: 16,          // larger and bold (under FADE)
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 4,
+    lineHeight: 20,
   },
-  previousSection: {
-    marginBottom: 32,
-  },
-  previousTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-    color: '#333',
-  },
-  previousButton: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 12,
-    padding: 16,
-    backgroundColor: '#f8f9fa',
-  },
-  previousContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  previousText: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  previousBarber: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  previousService: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  previousPrice: {
-    fontSize: 14,
-    color: '#2196F3',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 24,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: '#e0e0e0',
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    color: '#999',
-    fontSize: 14,
-  },
-  searchSection: {
-    alignItems: 'center',
-  },
-  searchTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-    color: '#333',
-  },
-  input: {
-    width: '100%',
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    fontSize: 16,
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#2196F3',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: 8,
-    fontSize: 16,
-  },
+  price: { fontSize: 20, fontWeight: '800', color: '#111827' },
+
+  center: { alignItems: 'center', justifyContent: 'center' },
+  muted: { color: '#6B7280', fontSize: 14, fontWeight: '600' },
+  linkBtn: { marginTop: 6, paddingVertical: 6, paddingHorizontal: 10 },
+  linkText: { color: '#2563EB', fontWeight: '800' },
 });

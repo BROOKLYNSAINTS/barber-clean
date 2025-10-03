@@ -2,14 +2,26 @@
 // This is a direct implementation that bypasses the Firebase SDK
 // when there's an API key issue
 import { Alert, Platform } from 'react-native';
-import firebaseConfig from './firebaseEnvironment';
+import { getFirebaseConfig } from './firebaseEnvironment';
+import { getDirectFirebaseConfig } from './directFirebaseConfig';
 
 // The direct REST API approach when Firebase SDK fails
 export const loginWithEmailDirect = async (email, password) => {
   console.log('🔄 Attempting direct Firebase REST API login');
   
   try {
-    // Use the hardcoded API key directly
+    // Get Firebase config - try both methods to ensure we have a working config
+    let firebaseConfig;
+    try {
+      firebaseConfig = getFirebaseConfig();
+      console.log('Using config from firebaseEnvironment.js');
+    } catch (e) {
+      // Fallback to direct config if the normal one fails
+      firebaseConfig = getDirectFirebaseConfig('development');
+      console.log('Using hardcoded development config');
+    }
+    
+    // Use the API key directly
     const FIREBASE_API_KEY = firebaseConfig.apiKey;
     
     if (!FIREBASE_API_KEY) {
@@ -18,10 +30,12 @@ export const loginWithEmailDirect = async (email, password) => {
     
     console.log('📧 Email:', email);
     console.log('🔑 API key length:', FIREBASE_API_KEY.length);
+    console.log('🔑 API key first 4 chars:', FIREBASE_API_KEY.substring(0, 4));
+    console.log('🔑 API key last 4 chars:', FIREBASE_API_KEY.substring(FIREBASE_API_KEY.length - 4));
     
     // Direct call to Firebase Auth REST API
     const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`;
-    console.log('🌐 Calling Firebase Auth API at:', url.substring(0, 60) + '...');
+    console.log('🌐 Calling Firebase Auth API');
     
     const response = await fetch(url, {
       method: 'POST',
@@ -82,7 +96,13 @@ export const loginWithEmailDirect = async (email, password) => {
 // Get user profile using the direct REST approach
 export const getUserProfileDirect = async (userId, idToken) => {
   try {
-    const FIREBASE_API_KEY = firebaseConfig.apiKey;
+    // Get Firebase config
+    let firebaseConfig;
+    try {
+      firebaseConfig = getFirebaseConfig();
+    } catch (e) {
+      firebaseConfig = getDirectFirebaseConfig('development');
+    }
     
     // Get user data from Firestore via REST API
     const url = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents/users/${userId}`;

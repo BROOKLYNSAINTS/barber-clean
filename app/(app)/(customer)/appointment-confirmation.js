@@ -12,8 +12,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../src/contexts/AuthContext';
-import { scheduleAppointmentReminder, scheduleTestReminder } from '../../../src/services/notifications';
-import DebugUser from '@/components/DebugUser';
+import { scheduleAppointmentReminder } from '../../../src/services/notifications';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/services/firebase';
 
 // ✅ Safe JSON parsing
 const safeParse = (input) => {
@@ -64,18 +65,89 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Add this function to fetch appointment by ID
+const fetchAppointmentById = async (appointmentId) => {
+  try {
+    const appointmentRef = doc(db, 'appointments', appointmentId);
+    const appointmentSnap = await getDoc(appointmentRef);
+    
+    if (appointmentSnap.exists()) {
+      return {
+        id: appointmentSnap.id,
+        ...appointmentSnap.data()
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching appointment:', error);
+    return null;
+  }
+};
+
 export default function AppointmentConfirmationScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { currentUser } = useAuth();
 
-  const appointment = safeParse(params.appointment);
-  const barber = safeParse(params.barber);
-  const service = safeParse(params.service);
-
-  const [loading, setLoading] = useState(false);
+  const [appointment, setAppointment] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [calendarAdded, setCalendarAdded] = useState(false);
   const [autoRemindersSet, setAutoRemindersSet] = useState(false);
+
+  const appointmentId = params.id || params.appointmentId;
+
+  // Fallbacks from route params
+  const paramPrice = Number(params.servicePrice ?? params.price ?? 0);
+  const paramDuration = Number(params.serviceDuration ?? params.duration ?? 0);
+
+  // Helpers for safe price/duration display
+  const getPriceNumber = (a) => {
+    const v = a?.servicePrice ?? a?.price ?? paramPrice ?? 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const formatPrice = (a) => getPriceNumber(a).toFixed(2);
+
+  const getDuration = (a) => {
+    const v = a?.duration ?? paramDuration ?? null;
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+
+  // Get appointmentId after all hooks
+  // const appointmentId = params.id;
+  
+  // Define handlers after hooks
+  const handleDone = () => {
+    router.replace('/(app)/(customer)/');
+  };
+
+  // Fetch the appointment data when the component mounts
+  useEffect(() => {
+    const loadAppointment = async () => {
+      try {
+        console.log('Fetching appointment with ID:', appointmentId);
+        const appointmentData = await fetchAppointmentById(appointmentId);
+        
+        if (!appointmentData) {
+          setError('Appointment not found');
+          setLoading(false);
+          return;
+        }
+        
+        console.log('Successfully loaded appointment:', appointmentData);
+        setAppointment(appointmentData);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error loading appointment:', err);
+        setError('Failed to load appointment details');
+        setLoading(false);
+      }
+    };
+    
+    loadAppointment();
+  }, [appointmentId]);
 
   // Automatically set up reminders when component mounts
   useEffect(() => {
@@ -127,149 +199,97 @@ export default function AppointmentConfirmationScreen() {
     );
   };
 
-  const testReminder = async () => {
-    try {
-      console.log('🧪 Testing reminder in 10 seconds...');
-      await scheduleTestReminder(appointment, currentUser.uid, 10);
-      Alert.alert(
-        'Test Reminder Scheduled', 
-        'A test reminder will appear in 10 seconds. Make sure your app is in the background to see the notification!'
-      );
-    } catch (error) {
-      console.error('Error scheduling test reminder:', error);
-      Alert.alert('Error', 'Failed to schedule test reminder.');
+  // Check if there's any missing data and log what we have
+  useEffect(() => {
+    console.log("DEBUG: Appointment data loaded:", appointment);
+    console.log("DEBUG: Price:", appointment?.price);
+    console.log("DEBUG: Service name:", appointment?.serviceName);
+  }, [appointment]);
+
+  // IMPORTANT: Move this useEffect outside the conditional rendering
+  useEffect(() => {
+    if (appointment && getPriceNumber(appointment) <= 0) {
+      console.error('WARNING: Displaying appointment with $0 price!');
+      Alert.alert('Price Missing', 'This appointment has no price. Barbers cannot work for free.', [{ text: 'OK' }]);
     }
-  };
-  const handleDone = () => {
-    router.replace({
-      pathname: '/(app)/(customer)/appointment-details',
-      params: {
-        appointment: JSON.stringify(appointment),
-        barber: JSON.stringify(barber),
-        service: JSON.stringify(service),
-      },
-    });
-  };
+  }, [appointment]);
 
-  if (!appointment || !barber || !service) {
-    return (
-      <View style={styles.centeredLoading}>
-        <ActivityIndicator size="large" color="#2196F3" />
-        <Text>Loading confirmation...</Text>
-      </View>
-    );
-  }
+  // Fetch missing barber contact from profile if not on the appointment
+  useEffect(() => {
+    if (!appointment) return;
+    if (appointment.barberPhone && appointment.barberAddress) return;
 
+    (async () => {
+      try {
+        if (!appointment.barberId) return;
+        const snap = await getDoc(doc(db, 'users', appointment.barberId));
+        if (snap.exists()) {
+          const data = snap.data() || {};
+          setAppointment(prev =>
+            prev
+              ? {
+                  ...prev,
+                  barberName: prev.barberName || data.name || '',
+                  barberPhone: prev.barberPhone || data.phone || '',
+                  barberAddress: prev.barberAddress || data.address || '',
+                }
+              : prev
+          );
+        }
+      } catch (e) {
+        console.error('Failed to fetch barber contact info', e);
+      }
+    })();
+  }, [appointment]);
+
+  // 2. Use conditional rendering in the return statement, not early returns
+  // This ensures hooks are always called in the same order
   return (
-    <ScrollView style={styles.container}>
-      <DebugUser screenName="Appointment Confirmation" />
-      <View style={styles.confirmationCard}>
-        <Ionicons name="checkmark-circle" size={64} color="#4CAF50" style={styles.confirmationIcon} />
-        <Text style={styles.confirmationTitle}>Appointment Confirmed!</Text>
-        <Text style={styles.confirmationSubtitle}>Your appointment has been successfully booked.</Text>
-      </View>
-
-      <View style={styles.detailsCard}>
-        <Text style={styles.detailsTitle}>Appointment Details</Text>
-
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Barber:</Text>
-          <Text style={styles.detailValue}>{barber.name}</Text>
+    <ScrollView>
+      {loading ? (
+        <View style={styles.centeredLoading}>
+          <ActivityIndicator size="large" color="#2196F3" />
+          <Text style={styles.loadingText}>Loading appointment confirmation...</Text>
         </View>
-
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Service:</Text>
-          <Text style={styles.detailValue}>{service.name}</Text>
+      ) : error || !appointment ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={64} color="#F44336" />
+          <Text style={styles.errorText}>{error || 'Failed to load appointment'}</Text>
+          <TouchableOpacity style={styles.button} onPress={() => router.replace('/(app)/(customer)')}>
+            <Text style={styles.buttonText}>Return to Home</Text>
+          </TouchableOpacity>
         </View>
-
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Date:</Text>
-          <Text style={styles.detailValue}>{formatDate(appointment.date)}</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Time:</Text>
-          <Text style={styles.detailValue}>{appointment.time}</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Duration:</Text>
-          <Text style={styles.detailValue}>{service.duration || 30} minutes</Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Text style={styles.detailLabel}>Price:</Text>
-          <Text style={styles.detailValue}>${(service.price || 0).toFixed(2)}</Text>
-        </View>
-
-        {barber.phone && (
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Phone:</Text>
-            <Text style={styles.detailValue}>{barber.phone}</Text>
-          </View>
-        )}
-
-        {barber.address && (
-          <View style={styles.detailRow}>
-            <Text style={styles.detailLabel}>Location:</Text>
-            <Text style={styles.detailValue}>{barber.address}</Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity
-          style={[styles.actionButton, calendarAdded && styles.disabledButtonGreen]}
-          onPress={addToCalendar}
-          disabled={loading || calendarAdded}
-        >
-          {loading && !calendarAdded ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="calendar-outline" size={20} color="#fff" style={styles.actionIcon} />
-              <Text style={styles.actionButtonText}>
-                {calendarAdded ? 'Added to Calendar' : 'Add to Calendar'}
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <View style={[styles.actionButton, styles.disabledButtonGreen]}>
-          <Ionicons name="notifications" size={20} color="#fff" style={styles.actionIcon} />
-          <Text style={styles.actionButtonText}>
-            {autoRemindersSet ? 'Reminders Set' : 'Setting Reminders...'}
+      ) : (
+        <View style={styles.container}>
+          <Text style={styles.title}>Appointment Confirmed</Text>
+          <Text style={styles.item}>Barber: {appointment.barberName || params.barberName || '—'}</Text>
+          <Text style={styles.item}>Phone: {appointment.barberPhone || '—'}</Text>
+          <Text style={styles.item}>Address: {appointment.barberAddress || '—'}</Text>
+          <Text style={styles.item}>Service: {appointment.serviceName}</Text>
+          <Text style={styles.item}>
+            Duration: {getDuration(appointment) != null ? `${getDuration(appointment)} min` : '—'}
           </Text>
+          <Text style={styles.item}>Price: ${formatPrice(appointment)}</Text>
+          <Text style={styles.item}>Date: {formatDate(appointment.date)}</Text>
+          <Text style={styles.item}>Time: {appointment.time}</Text>
+          <Text style={styles.subtle}>Confirmation ID: {appointmentId}</Text>
+
+          <TouchableOpacity style={styles.button} onPress={() => router.replace('/(app)/(customer)/')}>
+            <Text style={styles.buttonText}>Done</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-
-      <TouchableOpacity style={styles.doneButton} onPress={handleDone}>
-        <Text style={styles.doneButtonText}>Done</Text>
-      </TouchableOpacity>
-
-      {/* Test Button - Remove this in production */}
-      <TouchableOpacity 
-        style={[styles.doneButton, { backgroundColor: '#FF9800', marginTop: 8 }]} 
-        onPress={testReminder}
-      >
-        <Text style={styles.doneButtonText}>🧪 Test Reminder (10 seconds)</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.reminderInfoText}>
-        Reminders are automatically set for 24 hours and 1 hour before your appointment. 
-        You can view them in the notifications tab.
-      </Text>
-
-      <View style={{ padding: 10, backgroundColor: '#ffe' }}>
-        <Text>Raw appointment.date: {String(appointment?.date)}</Text>
-        <Text>Raw appointment.time: {String(appointment?.time)}</Text>
-      </View>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, padding: 24, justifyContent: 'center' },
+  title: { fontSize: 22, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
+  item: { fontSize: 16, marginVertical: 4 },
+  subtle: { fontSize: 12, color: '#666', marginTop: 12 },
+  button: { marginTop: 24, backgroundColor: '#2196F3', padding: 12, borderRadius: 8, alignItems: 'center' },
+  buttonText: { color: '#fff', fontWeight: '700' },
   centeredLoading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   confirmationCard: {
     alignItems: 'center',
@@ -348,5 +368,34 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 24,
     fontSize: 13,
+  },
+  loadingText: {
+    textAlign: 'center',
+    color: '#666',
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#F44336',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  button: {
+    backgroundColor: '#2196F3',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });

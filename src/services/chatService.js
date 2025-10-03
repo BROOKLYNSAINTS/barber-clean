@@ -1,41 +1,82 @@
-import { collection, query, where, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebase'; // adjust if your db is exported from another path
-import { useAuth } from '@/contexts/AuthContext'; // adjust if your AuthContext is exported from another path
-import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { useEffect } from 'react';
+import { db } from './firebase';
+import { 
+  collection, query, where, getDocs, doc, setDoc, serverTimestamp 
+} from 'firebase/firestore';
 
-
-export const startOrGetChatThread = async (barber1Id, barber2Id) => {
-  if (!barber1Id || !barber2Id || barber1Id === barber2Id) return null;
-
-  const participants = [barber1Id, barber2Id].sort(); // ensures consistent order
-
+export const startOrGetChatThread = async (userId1, userId2) => {
   try {
-    // 1. Check if a thread already exists
-    const chatQuery = query(
-      collection(db, 'chats'),
-      where('participants', '==', participants)
-    );
-
-    const snapshot = await getDocs(chatQuery);
-
-    if (!snapshot.empty) {
-      const existingThread = snapshot.docs[0];
-      return existingThread.id; // ✅ Return just the ID
+    console.log(`Starting or getting chat thread between ${userId1} and ${userId2}`);
+    
+    // Check for existing thread
+    const chatThreadsRef = collection(db, 'chatThreads');
+    
+    // We need to check if thread exists with these participants
+    const q1 = query(chatThreadsRef, where(`participants.${userId1}`, '==', true));
+    const snap = await getDocs(q1);
+    for (const d of snap.docs) {
+      const data = d.data();
+      if (data?.participants?.[userId2]) return d.id;
     }
 
-    // 2. Create a new thread if it doesn't exist
-    const newChat = {
+    // Create new thread with both users as participants
+    console.log('Creating new chat thread');
+    
+    // Format participants as object with user IDs as keys
+    const participants = {
+      [userId1]: true,
+      [userId2]: true
+    };
+    
+    // Create new thread
+    const newRef = doc(collection(db, 'chatThreads'));
+    await setDoc(newRef, {
       participants,
       createdAt: serverTimestamp(),
-      lastMessage: null,
-    };
-
-    const docRef = await addDoc(collection(db, 'chatThreads'), newChat);
-    return docRef.id; // ✅ Return just the ID
+      lastMessage: '',
+      lastMessageTimestamp: serverTimestamp(),
+    });
+    
+    console.log('Created thread with ID:', newRef.id);
+    return newRef.id;
   } catch (error) {
     console.error('Error starting or fetching chat thread:', error);
+    throw error;
+  }
+};
+
+export const sendMessage = async (threadId, senderId, text) => {
+  try {
+    // Add message to thread
+    const messagesRef = collection(db, 'chatThreads', threadId, 'messages');
+    await addDoc(messagesRef, {
+      senderId,
+      text,
+      createdAt: serverTimestamp()
+    });
+    
+    // Update thread with last message
+    const threadRef = doc(db, 'chatThreads', threadId);
+    await updateDoc(threadRef, {
+      lastMessage: text,
+      lastMessageTimestamp: serverTimestamp()
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Error sending message:', error);
+    throw error;
+  }
+};
+
+export const markThreadAsRead = async (threadId, userId) => {
+  try {
+    const threadRef = doc(db, 'chatThreads', threadId);
+    await updateDoc(threadRef, {
+      [`unreadCount.${userId}`]: 0
+    });
+    return true;
+  } catch (error) {
+    console.error('Error marking thread as read:', error);
     throw error;
   }
 };

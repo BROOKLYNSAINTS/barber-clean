@@ -5,8 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import theme from '@/styles/theme';
 
 import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
-import { app } from '../../../src/services/firebase';
-import { useAuth } from '../../../src/contexts/AuthContext';
+import { app } from '@/services/firebase';
+import { useAuth } from '@/contexts/AuthContext';
 
 const db = getFirestore(app);
 
@@ -15,44 +15,57 @@ export default function CustomerTabLayout() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid) {
+      console.log('⚠️ No current user in layout, skipping notification setup');
+      return;
+    }
 
-    // Get all notifications and filter on client side
-    const q = query(
-      collection(db, 'users', currentUser.uid, 'notifications')
-    );
+    try {
+      // Check if db is available
+      if (!db) {
+        console.error('❌ Firestore not initialized');
+        return;
+      }
+      
+      // Get all notifications and filter on client side
+      const q = query(
+        collection(db, 'users', currentUser.uid, 'notifications')
+      );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      // Filter for unread AND not cancelled notifications
-      const activeUnreadNotifications = snapshot.docs.filter(doc => {
-        const data = doc.data();
-        const isUnread = data.read === false;
-        const isNotCancelled = data.status !== 'cancelled';
-        
-        // Debug log each notification
-        console.log('🔍 Notification debug:', {
-          id: doc.id,
-          title: data.title,
-          read: data.read,
-          status: data.status,
-          isUnread,
-          isNotCancelled,
-          shouldCount: isUnread && isNotCancelled
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        // Filter for unread AND not cancelled notifications
+        const activeUnreadNotifications = snapshot.docs.filter(doc => {
+          const data = doc.data();
+          const isUnread = data.read === false;
+          const isNotCancelled = data.status !== 'cancelled';
+          
+          // Debug log each notification
+          console.log('🔍 Notification debug:', {
+            id: doc.id,
+            title: data.title,
+            read: data.read,
+            status: data.status,
+            isUnread,
+            isNotCancelled,
+            shouldCount: isUnread && isNotCancelled
+          });
+          
+          return isUnread && isNotCancelled;
         });
         
-        return isUnread && isNotCancelled;
+        setUnreadCount(activeUnreadNotifications.length);
+        console.log('📊 Notification badge count updated:', activeUnreadNotifications.length);
+        console.log('📊 Active unread notifications:', activeUnreadNotifications.map(doc => ({
+          id: doc.id,
+          title: doc.data().title,
+          status: doc.data().status
+        })));
       });
-      
-      setUnreadCount(activeUnreadNotifications.length);
-      console.log('📊 Notification badge count updated:', activeUnreadNotifications.length);
-      console.log('📊 Active unread notifications:', activeUnreadNotifications.map(doc => ({
-        id: doc.id,
-        title: doc.data().title,
-        status: doc.data().status
-      })));
-    });
 
-    return unsubscribe;
+      return unsubscribe;
+    } catch (error) {
+      console.error('❌ Error in notification subscription:', error);
+    }
   }, [currentUser?.uid]);
 
   return (
@@ -130,6 +143,7 @@ export default function CustomerTabLayout() {
       <Tabs.Screen name="tip" options={{ href: null }} />
       <Tabs.Screen name="payment" options={{ href: null }} />
       <Tabs.Screen name="chat" options={{ href: null }} />
+      <Tabs.Screen name="write-review" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -1,5 +1,4 @@
 import axios from 'axios';
-const { FIREBASE_API_KEY } = process.env;
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from './firebase';
 

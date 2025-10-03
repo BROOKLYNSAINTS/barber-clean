@@ -13,7 +13,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { generateChatResponse } from '@/services/openai'; // Adjusted path
 import { useRouter } from 'expo-router';
-import * as Speech from 'expo-speech';
+import * as Speech from '@/stubs/speech'; // was 'expo-speech', now stubbed
+// import * as Voice from 'expo-voice'; // Voice seems to be a duplicate of Speech or intended for expo-voice (deprecated)
 // import * as Voice from 'expo-speech'; // Voice seems to be a duplicate of Speech or intended for expo-voice (deprecated)
 // For voice input, consider using a library like react-native-voice or expo-av for recording and then sending to a Speech-to-Text API
 // For simplicity, I'll assume expo-speech is for Text-to-Speech and voice input might need a different setup if Voice.start was from a different library.
