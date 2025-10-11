@@ -4,11 +4,18 @@
   },
   "build": {
     "development": {
-      "developmentClient": true,
+      "developmentClient": false,
       "distribution": "internal"
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "store",
+      "developmentClient": false,
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_ENV": "preview",
+        "EXPO_PUBLIC_IS_TESTFLIGHT": "true"
+      }
+
     },
     "production": {
       "developmentClient": false,

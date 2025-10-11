@@ -15,6 +15,7 @@ export default {
   },
   updates: {
     fallbackToCacheTimeout: 0,
+    url: 'https://u.expo.dev/34c586b7-af2c-411d-9fbd-5cb699e2b12e',
   },
   assetBundlePatterns: ['**/*'],
   ios: {
@@ -55,8 +56,8 @@ export default {
     STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     eas: {
-      projectId: "34c586b7-af2c-411d-9fbd-5cb699e2b12e"
-    }
+      projectId: '34c586b7-af2c-411d-9fbd-5cb699e2b12e', // must be a string
+    },
   },
   plugins: [
     [

@@ -23,26 +23,19 @@ import {
   limit
 } from 'firebase/firestore';
 import { getFunctions } from 'firebase/functions';
+import Constants from 'expo-constants';
 
-import {
-  FIREBASE_API_KEY,
-  FIREBASE_AUTH_DOMAIN,
-  FIREBASE_PROJECT_ID,
-  FIREBASE_STORAGE_BUCKET,
-  FIREBASE_MESSAGING_SENDER_ID,
-  FIREBASE_APP_ID,
-  FIREBASE_MEASUREMENT_ID
-} from '@env';
+const EXTRA = Constants.expoConfig?.extra ?? {};
 
 // ✅ Firebase config
-const firebaseConfig = {
-  apiKey: FIREBASE_API_KEY,
-  authDomain: FIREBASE_AUTH_DOMAIN,
-  projectId: FIREBASE_PROJECT_ID,
-  storageBucket: FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: FIREBASE_MESSAGING_SENDER_ID,
-  appId: FIREBASE_APP_ID,
-  measurementId: FIREBASE_MEASUREMENT_ID
+export const firebaseConfig = {
+  apiKey: EXTRA.FIREBASE_API_KEY,
+  authDomain: EXTRA.FIREBASE_AUTH_DOMAIN,
+  projectId: EXTRA.FIREBASE_PROJECT_ID,
+  storageBucket: EXTRA.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: EXTRA.FIREBASE_MESSAGING_SENDER_ID,
+  appId: EXTRA.FIREBASE_APP_ID,
+  measurementId: EXTRA.FIREBASE_MEASUREMENT_ID,
 };
 
 // ✅ Initialize Firebase only once

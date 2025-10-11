@@ -5,7 +5,9 @@ import { loginWithEmail } from '@/services/restAuth';
 import { getUserProfile } from '@/services/firebase'; // Add this at the top
 
 import { registerForPushNotifications, saveNotificationToken } from '@/services/notifications';
-import { FIREBASE_API_KEY } from '@env';
+import Constants from 'expo-constants';
+const EXTRA = Constants.expoConfig?.extra ?? {};
+const FIREBASE_API_KEY = EXTRA.FIREBASE_API_KEY;
 import DebugUser from '@/components/DebugUser';
 import { useAuth } from '@/contexts/AuthContext';
 console.log("🔑 Firebase API Key from env:", FIREBASE_API_KEY);

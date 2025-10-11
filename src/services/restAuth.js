@@ -1,5 +1,7 @@
 import axios from 'axios';
-import { FIREBASE_API_KEY } from '@env';
+import Constants from 'expo-constants';
+const EXTRA = Constants.expoConfig?.extra ?? {};
+const FIREBASE_API_KEY = EXTRA.FIREBASE_API_KEY;
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Alert } from 'react-native';
 import { auth } from './firebase';
