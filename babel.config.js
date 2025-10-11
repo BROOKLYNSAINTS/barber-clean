@@ -5,9 +5,7 @@ module.exports = function (api) {
     plugins: [
       ['module-resolver', {
         extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
-        alias: {
-          '@': './src', // "@/styles/theme" -> "./src/styles/theme"
-        },
+        alias: { '@': './src' },
       }],
     ],
   };
