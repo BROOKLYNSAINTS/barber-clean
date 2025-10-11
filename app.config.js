@@ -1,10 +1,9 @@
-import 'dotenv/config';
+require('dotenv').config();
 
-export default {
+module.exports = ({ config }) => ({
   name: 'barber-clean',
   slug: 'barber-clean',
   version: '1.0.1',
-  //jsEngine: 'jsc',
   orientation: 'portrait',
   icon: './assets/icon-512.png',
   userInterfaceStyle: 'light',
@@ -19,31 +18,33 @@ export default {
   },
   assetBundlePatterns: ['**/*'],
   ios: {
-    buildNumber: '21',
-    infoPlist: {
-      "ITSAppUsesNonExemptEncryption": false,
-      NSSpeechRecognitionUsageDescription: "This app uses speech recognition to convert your voice into text for easier input.",
-      NSMicrophoneUsageDescription: "This app requires microphone access to capture your voice for speech recognition.",
-      NSCameraUsageDescription: "This app requires camera access to take photos for your profile and appointments.",
-      NSPhotoLibraryUsageDescription: "This app requires photo library access to select photos for your profile and appointments.",
-      NSLocationWhenInUseUsageDescription: "This app requires location access to find nearby barbers and salons.",
-      NSLocationAlwaysAndWhenInUseUsageDescription: "This app requires location access to provide location-based services even when the app is in the background.",
-      NSLocationAlwaysUsageDescription: "This app requires location access to provide location-based services even when the app is in the background.",
-      NSUserTrackingUsageDescription: "This app uses tracking to provide personalized ads and improve user experience.",
-      NSCalendarsUsageDescription: "This app requires calendar access to schedule your appointments.",
-      NSRemindersUsageDescription: "This app requires reminders access to set appointment reminders.",
-      NSCalendarsFullAccessUsageDescription: "This app needs full access to your calendar to create and manage appointments.",
-      NSRemindersFullAccessUsageDescription: "This app needs full access to your reminders to manage appointment notifications.",
-    },
     bundleIdentifier: 'com.ScheduleSync.barber',
     supportsTablet: true,
+    buildNumber: '135', // bump for TestFlight
+    jsEngine: 'hermes',
+    runtimeVersion: { policy: 'appVersion' },
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+      NSSpeechRecognitionUsageDescription: 'This app uses speech recognition to convert your voice into text for easier input.',
+      NSMicrophoneUsageDescription: 'This app requires microphone access to capture your voice for speech recognition.',
+      NSCameraUsageDescription: 'This app requires camera access to take photos for your profile and appointments.',
+      NSPhotoLibraryUsageDescription: 'This app requires photo library access to select photos for your profile and appointments.',
+      NSLocationWhenInUseUsageDescription: 'This app requires location access to find nearby barbers and salons.',
+      NSLocationAlwaysAndWhenInUseUsageDescription: 'This app requires location access to provide location-based services even when the app is in the background.',
+      NSLocationAlwaysUsageDescription: 'This app requires location access to provide location-based services even when the app is in the background.',
+      NSUserTrackingUsageDescription: 'This app uses tracking to provide personalized ads and improve user experience.',
+      NSCalendarsUsageDescription: 'This app requires calendar access to schedule your appointments.',
+      NSRemindersUsageDescription: 'This app requires reminders access to set appointment reminders.',
+      NSCalendarsFullAccessUsageDescription: 'This app needs full access to your calendar to create and manage appointments.',
+      NSRemindersFullAccessUsageDescription: 'This app needs full access to your reminders to manage appointment notifications.',
+    },
   },
   android: {
     package: 'com.ScheduleSync.barber',
-    adaptiveIcon: {
-      foregroundImage: './assets/adaptive-icon.png',
-      backgroundColor: '#FFFFFF',
-    },
+    adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#FFFFFF' },
+    versionCode: 2,
+    jsEngine: 'hermes',
+    runtimeVersion: { policy: 'appVersion' },
   },
   extra: {
     FIREBASE_API_KEY: process.env.FIREBASE_API_KEY,
@@ -55,9 +56,7 @@ export default {
     FIREBASE_MEASUREMENT_ID: process.env.FIREBASE_MEASUREMENT_ID,
     STRIPE_PUBLISHABLE_KEY: process.env.STRIPE_PUBLISHABLE_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    eas: {
-      projectId: '34c586b7-af2c-411d-9fbd-5cb699e2b12e', // must be a string
-    },
+    eas: { projectId: '34c586b7-af2c-411d-9fbd-5cb699e2b12e' },
   },
   plugins: [
     [
@@ -68,4 +67,4 @@ export default {
       },
     ],
   ],
-};
+});

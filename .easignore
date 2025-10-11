@@ -1,9 +1,5 @@
-# Keep package.json! Do NOT exclude it.
+ios/
+android/
 node_modules
-.git
 .expo
-dist
-build
-android/build
-ios/build
 .DS_Store
