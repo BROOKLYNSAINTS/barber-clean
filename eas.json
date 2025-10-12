@@ -10,12 +10,7 @@
     "preview": {
       "distribution": "store",
       "developmentClient": false,
-      "channel": "preview",
-      "env": {
-        "EXPO_PUBLIC_ENV": "preview",
-        "EXPO_PUBLIC_IS_TESTFLIGHT": "true"
-      }
-
+      "channel": "preview"
     },
     "production": {
       "developmentClient": false,
