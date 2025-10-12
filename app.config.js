@@ -12,17 +12,12 @@ module.exports = ({ config }) => ({
     resizeMode: 'contain',
     backgroundColor: '#ffffff',
   },
-  updates: {
-    fallbackToCacheTimeout: 0,
-    url: 'https://u.expo.dev/34c586b7-af2c-411d-9fbd-5cb699e2b12e',
-  },
   assetBundlePatterns: ['**/*'],
   ios: {
     bundleIdentifier: 'com.ScheduleSync.barber',
     supportsTablet: true,
-    buildNumber: '137', // bump for new build
+    buildNumber: '139', // bump for test
     jsEngine: 'hermes',
-    runtimeVersion: { policy: 'appVersion' },
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       NSSpeechRecognitionUsageDescription: 'This app uses speech recognition to convert your voice into text for easier input.',
@@ -44,7 +39,6 @@ module.exports = ({ config }) => ({
     adaptiveIcon: { foregroundImage: './assets/adaptive-icon.png', backgroundColor: '#FFFFFF' },
     versionCode: 3,
     jsEngine: 'hermes',
-    runtimeVersion: { policy: 'appVersion' },
   },
   extra: {
     FIREBASE_API_KEY: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
